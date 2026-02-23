@@ -56,3 +56,6 @@ coverage/
 # ── 로그 ──
 *.log
 logs/
+
+# ── 도구 ──
+.playwright-cli/

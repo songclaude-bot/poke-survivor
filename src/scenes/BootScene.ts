@@ -1,0 +1,93 @@
+import Phaser from "phaser";
+import { COLORS } from "../config";
+
+/**
+ * BootScene — Generate placeholder graphics & load assets.
+ * Real PMD sprites will replace these later.
+ */
+export class BootScene extends Phaser.Scene {
+  constructor() {
+    super({ key: "BootScene" });
+  }
+
+  preload(): void {
+    this.createPlaceholderSprites();
+  }
+
+  create(): void {
+    this.scene.start("GameScene");
+  }
+
+  /** Generate colored circle/square textures so we can prototype without external assets */
+  private createPlaceholderSprites(): void {
+    // Player (ace) — yellow circle
+    this.makeCircle("ace", 16, 0xffd700);
+
+    // Companion — cyan circle (smaller)
+    this.makeCircle("companion", 12, 0x00ddff);
+
+    // Enemy — red circle
+    this.makeCircle("enemy", 10, 0xff4444);
+
+    // Enemy elite — larger red
+    this.makeCircle("enemy-elite", 14, 0xff2222);
+
+    // Boss — big magenta
+    this.makeCircle("boss", 24, 0xff00ff);
+
+    // Projectile — small white
+    this.makeCircle("projectile", 4, 0xffffff);
+
+    // XP gem — small green diamond
+    this.makeDiamond("xp-gem", 6, COLORS.xpBlue);
+
+    // Item box — gold square
+    this.makeRect("item-box", 12, 12, COLORS.gold);
+
+    // Virtual joystick parts
+    this.makeCircle("joy-base", 48, 0x333344, 0.4);
+    this.makeCircle("joy-thumb", 20, 0x667eea, 0.7);
+  }
+
+  private makeCircle(
+    key: string,
+    radius: number,
+    color: number,
+    alpha = 1,
+  ): void {
+    const g = this.add.graphics();
+    g.fillStyle(color, alpha);
+    g.fillCircle(radius, radius, radius);
+    g.generateTexture(key, radius * 2, radius * 2);
+    g.destroy();
+  }
+
+  private makeDiamond(key: string, size: number, color: number): void {
+    const g = this.add.graphics();
+    g.fillStyle(color, 1);
+    g.fillPoints(
+      [
+        new Phaser.Geom.Point(size, 0),
+        new Phaser.Geom.Point(size * 2, size),
+        new Phaser.Geom.Point(size, size * 2),
+        new Phaser.Geom.Point(0, size),
+      ],
+      true,
+    );
+    g.generateTexture(key, size * 2, size * 2);
+    g.destroy();
+  }
+
+  private makeRect(
+    key: string,
+    w: number,
+    h: number,
+    color: number,
+  ): void {
+    const g = this.add.graphics();
+    g.fillStyle(color, 1);
+    g.fillRect(0, 0, w, h);
+    g.generateTexture(key, w, h);
+    g.destroy();
+  }
+}
