@@ -2230,11 +2230,15 @@ export class GameScene extends Phaser.Scene {
       .setDepth(401)
       .setScrollFactor(0);
 
+    const evoName = EVOLUTION_CHAINS[this.ace.pokemonKey]?.[this.aceEvoStage]?.name ?? "Pikachu";
+    const totalDps = this.ace.atk + this.companions.reduce((sum, c) => sum + c.atk, 0);
     const stats = [
-      `Cycle ${this.cycleNumber}`,
-      `Lv.${this.level}  Kill: ${this.kills}`,
+      `Cycle ${this.cycleNumber} Complete`,
+      ``,
+      `Ace: ${evoName}  Lv.${this.level}`,
+      `Kills: ${this.kills}  Waves: ${this.waveNumber}`,
+      `Party DPS: ${totalDps}`,
       `Time: ${this.formatTime(CYCLE_DURATION_SEC - this.cycleTimer)}`,
-      `Legions: ${this.legions.length}`,
     ].join("\n");
 
     this.add
@@ -2261,9 +2265,12 @@ export class GameScene extends Phaser.Scene {
       .setDepth(401)
       .setScrollFactor(0);
 
-    const companionNames = this.companions.map((_, i) => ["Squirtle", "Gastly", "Geodude"][i] ?? "???");
+    const companionNames = this.companions.map((c) => {
+      const key = c.sprite.texture.key.replace("pmd-", "");
+      return POKEMON_SPRITES[key]?.name ?? key;
+    });
     this.add
-      .text(GAME_WIDTH / 2, 290, `Ace + ${companionNames.join(", ")}`, {
+      .text(GAME_WIDTH / 2, 300, `${evoName} + ${companionNames.join(", ") || "Solo"}`, {
         fontFamily: "monospace",
         fontSize: "12px",
         color: "#aaa",
@@ -2274,9 +2281,9 @@ export class GameScene extends Phaser.Scene {
 
     // Store legion
     this.legions.push({
-      ace: `Ace_${this.cycleNumber}`,
+      ace: evoName,
       companions: companionNames,
-      dps: this.ace.atk + this.companions.reduce((sum, c) => sum + c.atk, 0),
+      dps: totalDps,
       color: legionColor,
     });
 
