@@ -157,6 +157,13 @@ export class GameScene extends Phaser.Scene {
   private killStreak = 0;
   private lastKillTime = 0;
 
+  // -- Wave system --
+  private waveNumber = 0;
+  private waveTimer = 0;
+  private waveRestTimer = 0;       // Rest period between waves
+  private waveEnemiesRemaining = 0; // Enemies left in current wave
+  private inWaveRest = false;
+
   // -- UI --
   private hpBar!: Phaser.GameObjects.Graphics;
   private xpBar!: Phaser.GameObjects.Graphics;
@@ -164,6 +171,7 @@ export class GameScene extends Phaser.Scene {
   private killText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
   private cycleText!: Phaser.GameObjects.Text;
+  private waveText!: Phaser.GameObjects.Text;
 
   // -- Damage popup pool --
   private dmgPopups: Phaser.GameObjects.Text[] = [];
@@ -197,6 +205,7 @@ export class GameScene extends Phaser.Scene {
     this.createJoystick();
     this.createPhysicsGroups();
     this.setupCollisions();
+    sfx.startBgm();
   }
 
   // ================================================================
@@ -208,6 +217,7 @@ export class GameScene extends Phaser.Scene {
     this.projectiles = [];
     this.companions = [];
     this.xpGems = [];
+    this.items = [];
     this.xp = 0;
     this.level = 1;
     this.xpToNext = XP_PER_LEVEL_BASE;
@@ -218,6 +228,11 @@ export class GameScene extends Phaser.Scene {
     this.spawnTimer = 0;
     this.isPaused = false;
     this.pendingLevelUp = false;
+    this.waveNumber = 0;
+    this.waveTimer = 0;
+    this.waveRestTimer = 0;
+    this.waveEnemiesRemaining = 0;
+    this.inWaveRest = false;
     this.boss = null;
     this.bossSpawned = false;
     this.bossWarningShown = false;
@@ -341,6 +356,17 @@ export class GameScene extends Phaser.Scene {
         fontFamily: "monospace",
         fontSize: "12px",
         color: "#fbbf24",
+      })
+      .setOrigin(1, 0)
+      .setDepth(100)
+      .setScrollFactor(0);
+
+    // Wave info (below cycle)
+    this.waveText = this.add
+      .text(GAME_WIDTH - 8, 24, "", {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#a78bfa",
       })
       .setOrigin(1, 0)
       .setDepth(100)
@@ -566,21 +592,80 @@ export class GameScene extends Phaser.Scene {
   // ================================================================
 
   private updateEnemySpawning(dt: number): void {
+    const elapsed = CYCLE_DURATION_SEC - this.cycleTimer;
+
+    // Wave rest period
+    if (this.inWaveRest) {
+      this.waveRestTimer -= dt;
+      this.waveText.setText(`Next wave in ${Math.ceil(this.waveRestTimer)}s`);
+      if (this.waveRestTimer <= 0) {
+        this.inWaveRest = false;
+        this.startNextWave(elapsed);
+      }
+      return;
+    }
+
+    // Start first wave
+    if (this.waveNumber === 0) {
+      this.startNextWave(elapsed);
+      return;
+    }
+
+    // Check if current wave is cleared
+    if (this.waveEnemiesRemaining <= 0 && this.enemies.length === 0) {
+      this.inWaveRest = true;
+      this.waveRestTimer = 3; // 3 second rest between waves
+      this.showWaveClearText();
+      return;
+    }
+
+    // Spawn enemies for current wave
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
 
-    // Spawn rate increases over time
-    const elapsed = CYCLE_DURATION_SEC - this.cycleTimer;
-    const spawnInterval = Math.max(0.3, 1.5 - elapsed * 0.004);
+    const spawnInterval = Math.max(0.25, 1.2 - this.waveNumber * 0.08);
     this.spawnTimer = spawnInterval;
 
-    if (this.enemies.length >= MAX_ENEMIES) return;
+    if (this.enemies.length >= MAX_ENEMIES || this.waveEnemiesRemaining <= 0) return;
 
-    // How many to spawn
-    const batchSize = elapsed < 30 ? 1 : elapsed < 120 ? 2 : 3;
+    const batchSize = Math.min(this.waveEnemiesRemaining, 1 + Math.floor(this.waveNumber / 4));
     for (let i = 0; i < batchSize; i++) {
+      if (this.waveEnemiesRemaining <= 0) break;
       this.spawnEnemy(elapsed);
+      this.waveEnemiesRemaining--;
     }
+  }
+
+  private startNextWave(elapsed: number): void {
+    this.waveNumber++;
+    // Each wave gets progressively bigger
+    this.waveEnemiesRemaining = 5 + this.waveNumber * 3 + this.cycleNumber * 2;
+    this.waveText.setText(`Wave ${this.waveNumber}`);
+
+    // Announce wave
+    this.showWarning(`Wave ${this.waveNumber}`);
+  }
+
+  private showWaveClearText(): void {
+    const txt = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "WAVE CLEAR!", {
+        fontFamily: "monospace",
+        fontSize: "20px",
+        color: "#a78bfa",
+        stroke: "#000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(200)
+      .setScrollFactor(0);
+
+    this.tweens.add({
+      targets: txt,
+      y: txt.y - 40,
+      alpha: 0,
+      duration: 1500,
+      onComplete: () => txt.destroy(),
+    });
   }
 
   /** Enemy pokemon pool per tier */
@@ -1443,6 +1528,7 @@ export class GameScene extends Phaser.Scene {
 
   private onAceDeath(): void {
     this.isPaused = true;
+    sfx.stopBgm();
     sfx.playDeath();
 
     const overlay = this.add.rectangle(

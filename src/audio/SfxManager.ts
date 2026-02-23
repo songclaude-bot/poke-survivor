@@ -140,6 +140,71 @@ export class SfxManager {
     });
   }
 
+  // ----------------------------------------------------------------
+  // BGM — procedural 8-bit loop using arpeggiated chords
+  // ----------------------------------------------------------------
+
+  private bgmNodes: OscillatorNode[] = [];
+  private bgmGain: GainNode | null = null;
+  private bgmPlaying = false;
+
+  startBgm(): void {
+    if (!this.ensureContext() || this.bgmPlaying) return;
+    const ctx = this.ctx!;
+    this.bgmGain = ctx.createGain();
+    this.bgmGain.gain.value = 0.06;
+    this.bgmGain.connect(this.masterGain!);
+
+    // Bass line — looping pattern
+    const bassNotes = [131, 165, 147, 175]; // C3, E3, D3, F3
+    const bass = ctx.createOscillator();
+    bass.type = "triangle";
+    bass.frequency.setValueAtTime(bassNotes[0], ctx.currentTime);
+
+    // Schedule repeating bass pattern
+    const beatLen = 0.4;
+    const patternLen = bassNotes.length * beatLen;
+    for (let rep = 0; rep < 200; rep++) {
+      for (let i = 0; i < bassNotes.length; i++) {
+        const t = ctx.currentTime + rep * patternLen + i * beatLen;
+        bass.frequency.setValueAtTime(bassNotes[i], t);
+      }
+    }
+    bass.connect(this.bgmGain);
+    bass.start(ctx.currentTime);
+
+    // Arpeggio layer
+    const arpNotes = [523, 659, 784, 659, 587, 698, 784, 698]; // C5 E5 G5 E5 D5 F5 G5 F5
+    const arp = ctx.createOscillator();
+    arp.type = "square";
+    const arpGain = ctx.createGain();
+    arpGain.gain.value = 0.03;
+    arp.frequency.setValueAtTime(arpNotes[0], ctx.currentTime);
+
+    const arpBeat = 0.2;
+    const arpPatternLen = arpNotes.length * arpBeat;
+    for (let rep = 0; rep < 400; rep++) {
+      for (let i = 0; i < arpNotes.length; i++) {
+        const t = ctx.currentTime + rep * arpPatternLen + i * arpBeat;
+        arp.frequency.setValueAtTime(arpNotes[i], t);
+      }
+    }
+    arp.connect(arpGain);
+    arpGain.connect(this.bgmGain);
+    arp.start(ctx.currentTime);
+
+    this.bgmNodes = [bass, arp];
+    this.bgmPlaying = true;
+  }
+
+  stopBgm(): void {
+    for (const node of this.bgmNodes) {
+      try { node.stop(); } catch { /* already stopped */ }
+    }
+    this.bgmNodes = [];
+    this.bgmPlaying = false;
+  }
+
   /** Start game blip */
   playStart(): void {
     if (!this.ensureContext()) return;
