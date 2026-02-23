@@ -1,0 +1,22 @@
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
+
+  [Full GPL v3 text: https://www.gnu.org/licenses/gpl-3.0.txt]
+
+---
+
+이 프로젝트의 소스 코드는 GPL v3 라이선스로 배포됩니다.
+
+단, 이 프로젝트에 포함된 그래픽/사운드 에셋은 별도 라이선스가 적용됩니다.
+자세한 내용은 CREDITS.md를 참조하세요.
+
+포켓몬 관련 지적재산권은 별도 고지(NOTICE.md)를 참조하세요.
