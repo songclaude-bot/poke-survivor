@@ -134,6 +134,8 @@ export class GameScene extends Phaser.Scene {
   private cycleTimer = CYCLE_DURATION_SEC;
   private spawnTimer = 0;
   private isPaused = false;
+  private killStreak = 0;
+  private lastKillTime = 0;
 
   // -- UI --
   private hpBar!: Phaser.GameObjects.Graphics;
@@ -186,6 +188,8 @@ export class GameScene extends Phaser.Scene {
     this.level = 1;
     this.xpToNext = XP_PER_LEVEL_BASE;
     this.kills = 0;
+    this.killStreak = 0;
+    this.lastKillTime = 0;
     this.cycleTimer = CYCLE_DURATION_SEC;
     this.spawnTimer = 0;
     this.isPaused = false;
@@ -442,6 +446,7 @@ export class GameScene extends Phaser.Scene {
     this.updateLegions(dt);
     this.updateProjectiles(dt);
     this.updateXpGemMagnet();
+    this.updateKillStreak();
     this.drawUI();
   }
 
@@ -774,9 +779,26 @@ export class GameScene extends Phaser.Scene {
 
   private onEnemyDeath(enemy: EnemyData): void {
     this.kills++;
+    this.killStreak++;
+    this.lastKillTime = this.time.now;
 
     // Check if this was the boss
     const wasBoss = enemy === this.boss;
+
+    // Death particles
+    this.spawnDeathParticles(enemy.sprite.x, enemy.sprite.y, wasBoss);
+
+    // Camera shake (stronger for boss)
+    if (wasBoss) {
+      this.cameras.main.shake(300, 0.015);
+    } else if (this.killStreak >= 5) {
+      this.cameras.main.shake(50, 0.003);
+    }
+
+    // Kill streak text
+    if (this.killStreak >= 10 && this.killStreak % 5 === 0) {
+      this.showStreakText(this.killStreak);
+    }
 
     // Spawn XP gem (boss drops more)
     const xpValue = wasBoss
@@ -806,8 +828,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateXpGemMagnet(): void {
-    const magnetRange = 60;
-    const magnetSpeed = 200;
+    const magnetRange = 60 + this.level * 5;
+    const magnetSpeed = 200 + this.level * 10;
     const ax = this.ace.sprite.x;
     const ay = this.ace.sprite.y;
 
@@ -859,6 +881,9 @@ export class GameScene extends Phaser.Scene {
     // Always grant small passive stat boost
     this.ace.attackRange += 3;
     if (this.ace.attackCooldown > 350) this.ace.attackCooldown -= 15;
+
+    // Camera flash on level up
+    this.cameras.main.flash(200, 255, 255, 255);
 
     // Show selection UI for meaningful choices
     sfx.playLevelUp();
@@ -1239,7 +1264,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Update texts
-    this.killText.setText(`Kill: ${this.kills}`);
+    const streakSuffix = this.killStreak >= 5 ? ` 🔥${this.killStreak}` : "";
+    this.killText.setText(`Kill: ${this.kills}${streakSuffix}`);
+    this.killText.setColor(this.killStreak >= 10 ? "#fbbf24" : "#888");
     this.levelText.setText(`Lv.${this.level}`);
     const legionInfo = this.legions.length > 0 ? ` [${this.legions.length}]` : "";
     this.cycleText.setText(`Cycle ${this.cycleNumber}${legionInfo}`);
@@ -1624,6 +1651,68 @@ export class GameScene extends Phaser.Scene {
       card.on("pointerover", () => card.setFillStyle(0x1a1a25, 1));
       card.on("pointerout", () => card.setFillStyle(0x111118, 0.95));
     });
+  }
+
+  // ================================================================
+  // KILL STREAK + PARTICLES
+  // ================================================================
+
+  private updateKillStreak(): void {
+    // Reset streak if 2 seconds pass without a kill
+    if (this.killStreak > 0 && this.time.now - this.lastKillTime > 2000) {
+      this.killStreak = 0;
+    }
+  }
+
+  private showStreakText(streak: number): void {
+    const labels = ["", "", "", "", "", "", "", "", "", "",
+      "COMBO x10!", "", "", "", "", "COMBO x15!", "", "", "", "",
+      "RAMPAGE x20!", "", "", "", "", "MASSACRE x25!"];
+    const label = labels[streak] ?? `COMBO x${streak}!`;
+    const color = streak >= 20 ? "#f43f5e" : streak >= 15 ? "#fbbf24" : "#667eea";
+
+    const txt = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, label, {
+        fontFamily: "monospace",
+        fontSize: "20px",
+        color,
+        stroke: "#000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(250)
+      .setScrollFactor(0);
+
+    this.tweens.add({
+      targets: txt,
+      y: txt.y - 40,
+      alpha: 0,
+      scaleX: 1.3,
+      scaleY: 1.3,
+      duration: 1200,
+      ease: "Power2",
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  private spawnDeathParticles(x: number, y: number, isBoss: boolean): void {
+    const count = isBoss ? 12 : 5;
+    const color = isBoss ? 0xfbbf24 : 0xff6666;
+    for (let i = 0; i < count; i++) {
+      const p = this.add.circle(x, y, isBoss ? 4 : 2, color, 0.8).setDepth(50);
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 40 + Math.random() * (isBoss ? 100 : 60);
+      this.tweens.add({
+        targets: p,
+        x: x + Math.cos(angle) * speed,
+        y: y + Math.sin(angle) * speed,
+        alpha: 0,
+        scaleX: 0.3,
+        scaleY: 0.3,
+        duration: 300 + Math.random() * 200,
+        onComplete: () => p.destroy(),
+      });
+    }
   }
 
   // ================================================================
