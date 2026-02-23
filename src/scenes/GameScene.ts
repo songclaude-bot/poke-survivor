@@ -66,6 +66,17 @@ interface LegionData {
   color: number;
 }
 
+/** Runtime representation of a legion following the player */
+interface LegionEntity {
+  data: LegionData;
+  gfx: Phaser.GameObjects.Graphics;
+  orbitAngle: number;
+  orbitDist: number;
+  lastAttackTime: number;
+  attackInterval: number;
+  attackRange: number;
+}
+
 interface CyclePassData {
   cycleNumber?: number;
   legions?: LegionData[];
@@ -102,6 +113,7 @@ export class GameScene extends Phaser.Scene {
   // -- Cycle / Legion --
   private cycleNumber = 1;
   private legions: LegionData[] = [];
+  private legionEntities: LegionEntity[] = [];
 
   // -- Level-up selection --
   private levelUpContainer!: Phaser.GameObjects.Container;
@@ -144,6 +156,7 @@ export class GameScene extends Phaser.Scene {
     this.resetState();
     this.createStarfield();
     this.createAce();
+    this.createLegions();
     this.createUI();
     this.createJoystick();
     this.createPhysicsGroups();
@@ -171,6 +184,7 @@ export class GameScene extends Phaser.Scene {
     this.bossSpawned = false;
     this.bossWarningShown = false;
     this.worldOffset.set(0, 0);
+    this.legionEntities = [];
     // Note: cycleNumber and legions are preserved via init()
   }
 
@@ -208,6 +222,28 @@ export class GameScene extends Phaser.Scene {
       attackCooldown: Math.max(400, 800 - (this.cycleNumber - 1) * 30),
       lastAttackTime: 0,
     };
+  }
+
+  private createLegions(): void {
+    // Spawn visual representations of past legions
+    this.legionEntities = [];
+    for (let i = 0; i < this.legions.length; i++) {
+      const legion = this.legions[i];
+      const gfx = this.add.graphics().setDepth(4);
+
+      // LOD: first 3 legions get detailed rendering, rest are simpler
+      const entity: LegionEntity = {
+        data: legion,
+        gfx,
+        orbitAngle: (i * Math.PI * 2) / Math.max(this.legions.length, 1),
+        orbitDist: 70 + i * 20,
+        lastAttackTime: 0,
+        // Attack faster for higher DPS legions
+        attackInterval: Math.max(500, 2000 - legion.dps * 20),
+        attackRange: 100 + Math.min(legion.dps, 50),
+      };
+      this.legionEntities.push(entity);
+    }
   }
 
   private createUI(): void {
@@ -382,6 +418,7 @@ export class GameScene extends Phaser.Scene {
     this.updateEnemies(dt);
     this.updateAceAutoAttack();
     this.updateCompanions(dt);
+    this.updateLegions(dt);
     this.updateProjectiles(dt);
     this.updateXpGemMagnet();
     this.drawUI();
@@ -922,6 +959,77 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ================================================================
+  // LEGIONS (past parties auto-fighting)
+  // ================================================================
+
+  private updateLegions(dt: number): void {
+    const now = this.time.now;
+    const ax = this.ace.sprite.x;
+    const ay = this.ace.sprite.y;
+
+    for (const legion of this.legionEntities) {
+      // Orbit around the ace
+      legion.orbitAngle += dt * 0.8;
+      const lx = ax + Math.cos(legion.orbitAngle) * legion.orbitDist;
+      const ly = ay + Math.sin(legion.orbitAngle) * legion.orbitDist;
+
+      // Clamp to screen bounds
+      const clampX = Phaser.Math.Clamp(lx, -100, GAME_WIDTH + 100);
+      const clampY = Phaser.Math.Clamp(ly, -100, GAME_HEIGHT + 100);
+
+      // Draw legion — LOD based on index
+      legion.gfx.clear();
+      const color = legion.data.color;
+      const memberCount = 1 + legion.data.companions.length;
+
+      if (this.legionEntities.indexOf(legion) < 3) {
+        // Tier 1 LOD: Individual circles for ace + companions
+        const aceR = 8;
+        legion.gfx.fillStyle(color, 0.6);
+        legion.gfx.fillCircle(clampX, clampY, aceR);
+
+        // Companions as smaller orbiting dots
+        for (let j = 0; j < legion.data.companions.length; j++) {
+          const ca = legion.orbitAngle * 2 + (j * Math.PI * 2) / memberCount;
+          const cx = clampX + Math.cos(ca) * 15;
+          const cy = clampY + Math.sin(ca) * 15;
+          legion.gfx.fillStyle(color, 0.4);
+          legion.gfx.fillCircle(cx, cy, 5);
+        }
+
+        // DPS aura ring
+        legion.gfx.lineStyle(1, color, 0.2);
+        legion.gfx.strokeCircle(clampX, clampY, legion.attackRange * 0.3);
+      } else {
+        // Tier 2+ LOD: Single glow blob
+        const blobR = 6 + Math.min(memberCount * 2, 10);
+        legion.gfx.fillStyle(color, 0.35);
+        legion.gfx.fillCircle(clampX, clampY, blobR);
+      }
+
+      // Auto-attack enemies in range
+      if (now - legion.lastAttackTime >= legion.attackInterval) {
+        legion.lastAttackTime = now;
+        const dmg = legion.data.dps * (legion.attackInterval / 1000);
+
+        for (const e of this.enemies) {
+          const d = Phaser.Math.Distance.Between(clampX, clampY, e.sprite.x, e.sprite.y);
+          if (d < legion.attackRange) {
+            e.hp -= dmg;
+            // Flash enemy with legion color
+            e.sprite.setTint(color);
+            this.time.delayedCall(60, () => {
+              if (e.sprite.active) e.sprite.clearTint();
+            });
+            if (e.hp <= 0) this.onEnemyDeath(e);
+            break; // One target per attack
+          }
+        }
+      }
+    }
+  }
+
+  // ================================================================
   // DAMAGE
   // ================================================================
 
@@ -1268,6 +1376,7 @@ export class GameScene extends Phaser.Scene {
     for (const p of this.projectiles) p.sprite.destroy();
     for (const g of this.xpGems) g.sprite.destroy();
     for (const c of this.companions) c.sprite.destroy();
+    for (const le of this.legionEntities) le.gfx.destroy();
     this.ace.sprite.destroy();
 
     // Restart scene with persistent data
