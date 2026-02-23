@@ -51,6 +51,8 @@ interface EnemyData {
   chargeTimer?: number;
   /** For charge behavior: is currently charging */
   isCharging?: boolean;
+  /** Elite enemy flag */
+  isElite?: boolean;
 }
 
 interface ProjectileData {
@@ -997,18 +999,39 @@ export class GameScene extends Phaser.Scene {
     };
     const behavior = behaviorMap[pokemonKey] ?? "chase";
 
+    // Elite chance: 20% after wave 3, scales with wave number
+    const isElite = this.waveNumber >= 3 && Math.random() < Math.min(0.35, 0.15 + this.waveNumber * 0.01);
+
+    const eliteMult = isElite ? 2.5 : 1;
+    const baseHp = Math.round(15 * hpMult * eliteMult);
+
+    if (isElite) {
+      sprite.setTint(0xffaa00); // Gold tint for elites
+      // Scale up elite sprite
+      this.tweens.killTweensOf(sprite);
+      sprite.setScale(0);
+      this.tweens.add({
+        targets: sprite,
+        scaleX: 1.4,
+        scaleY: 1.4,
+        duration: 300,
+        ease: "Back.easeOut",
+      });
+    }
+
     const enemy: EnemyData = {
       sprite,
       pokemonKey,
-      hp: Math.round(15 * hpMult),
-      maxHp: Math.round(15 * hpMult),
-      atk: Math.round((5 + tier * 3 + elapsed * 0.02) * cycleMult),
-      speed: (40 + Math.random() * 30) * spdMult,
+      hp: baseHp,
+      maxHp: baseHp,
+      atk: Math.round((5 + tier * 3 + elapsed * 0.02) * cycleMult * (isElite ? 1.8 : 1)),
+      speed: (40 + Math.random() * 30) * spdMult * (isElite ? 1.2 : 1),
       hpBar: hpBarGfx,
       behavior,
       orbitAngle: behavior === "circle" ? Math.random() * Math.PI * 2 : undefined,
       chargeTimer: behavior === "charge" ? 3000 + Math.random() * 2000 : undefined,
       isCharging: false,
+      isElite,
     };
     this.enemies.push(enemy);
   }
@@ -1147,13 +1170,13 @@ export class GameScene extends Phaser.Scene {
       // Draw HP bar above enemy
       e.hpBar.clear();
       if (e.hp < e.maxHp) {
-        const bw = 20;
+        const bw = e.isElite ? 26 : 20;
         const bx = e.sprite.x - bw / 2;
-        const by = e.sprite.y - 16;
+        const by = e.sprite.y - (e.isElite ? 20 : 16);
         e.hpBar.fillStyle(0x333333, 0.8);
-        e.hpBar.fillRect(bx, by, bw, 3);
-        e.hpBar.fillStyle(COLORS.hpRed, 1);
-        e.hpBar.fillRect(bx, by, bw * (e.hp / e.maxHp), 3);
+        e.hpBar.fillRect(bx, by, bw, e.isElite ? 4 : 3);
+        e.hpBar.fillStyle(e.isElite ? 0xffaa00 : COLORS.hpRed, 1);
+        e.hpBar.fillRect(bx, by, bw * (e.hp / e.maxHp), e.isElite ? 4 : 3);
       }
 
       // Remove if too far from player
@@ -1302,9 +1325,11 @@ export class GameScene extends Phaser.Scene {
     // Death particles
     this.spawnDeathParticles(enemy.sprite.x, enemy.sprite.y, wasBoss);
 
-    // Camera shake (stronger for boss)
+    // Camera shake (stronger for boss/elite)
     if (wasBoss) {
       this.cameras.main.shake(300, 0.015);
+    } else if (enemy.isElite) {
+      this.cameras.main.shake(100, 0.006);
     } else if (this.killStreak >= 5) {
       this.cameras.main.shake(50, 0.003);
     }
@@ -1314,14 +1339,17 @@ export class GameScene extends Phaser.Scene {
       this.showStreakText(this.killStreak);
     }
 
-    // Spawn XP gem (boss drops more)
+    // Spawn XP gem (boss/elite drop more)
     const xpValue = wasBoss
       ? 50 + this.cycleNumber * 20
-      : 3 + Math.floor(enemy.maxHp / 10);
+      : enemy.isElite
+        ? 10 + Math.floor(enemy.maxHp / 5)
+        : 3 + Math.floor(enemy.maxHp / 10);
     this.spawnXpGem(enemy.sprite.x, enemy.sprite.y, xpValue);
 
-    // Random item drop (8% chance, boss always drops)
-    if (wasBoss || Math.random() < 0.08) {
+    // Random item drop (8% normal, 40% elite, 100% boss)
+    const dropChance = wasBoss ? 1 : enemy.isElite ? 0.4 : 0.08;
+    if (Math.random() < dropChance) {
       this.spawnItem(enemy.sprite.x, enemy.sprite.y);
     }
 
