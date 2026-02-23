@@ -21,6 +21,11 @@ export class SfxManager {
     }
   }
 
+  adjustVolume(delta: number): void {
+    if (!this.masterGain) return;
+    this.masterGain.gain.value = Math.max(0, Math.min(1, this.masterGain.gain.value + delta));
+  }
+
   private ensureContext(): boolean {
     if (!this.ctx || !this.masterGain) return false;
     if (this.ctx.state === "suspended") {

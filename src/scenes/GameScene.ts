@@ -217,6 +217,10 @@ export class GameScene extends Phaser.Scene {
   // -- Damage popup pool --
   private dmgPopups: Phaser.GameObjects.Text[] = [];
 
+  // -- Pause menu --
+  private pauseContainer!: Phaser.GameObjects.Container;
+  private manualPause = false;
+
   // -- Minimap + aim indicator --
   private minimapGfx!: Phaser.GameObjects.Graphics;
   private aimGfx!: Phaser.GameObjects.Graphics;
@@ -434,8 +438,136 @@ export class GameScene extends Phaser.Scene {
     // Aim indicator (world-space, follows camera)
     this.aimGfx = this.add.graphics().setDepth(8);
 
+    // Pause button (top-left area, below HP bar)
+    const pauseBtn = this.add
+      .text(GAME_WIDTH - 36, 44, "❚❚", {
+        fontFamily: "monospace",
+        fontSize: "18px",
+        color: "#888",
+      })
+      .setOrigin(0.5)
+      .setDepth(101)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+
+    pauseBtn.on("pointerdown", () => this.togglePause());
+
+    // Pause menu container (hidden)
+    this.pauseContainer = this.add.container(0, 0).setDepth(600).setScrollFactor(0).setVisible(false);
+
     // Level-up selection container (hidden)
     this.levelUpContainer = this.add.container(0, 0).setDepth(500).setScrollFactor(0).setVisible(false);
+  }
+
+  private togglePause(): void {
+    if (this.pendingLevelUp) return; // Don't pause during level-up
+
+    if (this.manualPause) {
+      this.resumeGame();
+    } else {
+      this.showPauseMenu();
+    }
+  }
+
+  private showPauseMenu(): void {
+    this.manualPause = true;
+    this.isPaused = true;
+    this.pauseContainer.removeAll(true);
+    this.pauseContainer.setVisible(true);
+
+    // Overlay
+    const overlay = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
+      .setScrollFactor(0);
+    this.pauseContainer.add(overlay);
+
+    // PAUSED title
+    const title = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, "PAUSED", {
+        fontFamily: "monospace",
+        fontSize: "28px",
+        color: "#667eea",
+        stroke: "#000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0);
+    this.pauseContainer.add(title);
+
+    // Resume button
+    const resumeBtn = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "[ Resume ]", {
+        fontFamily: "monospace",
+        fontSize: "18px",
+        color: "#3bc95e",
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    resumeBtn.on("pointerdown", () => this.resumeGame());
+    resumeBtn.on("pointerover", () => resumeBtn.setColor("#4ade80"));
+    resumeBtn.on("pointerout", () => resumeBtn.setColor("#3bc95e"));
+    this.pauseContainer.add(resumeBtn);
+
+    // Volume controls
+    const volLabel = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, "Volume", {
+        fontFamily: "monospace",
+        fontSize: "12px",
+        color: "#888",
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0);
+    this.pauseContainer.add(volLabel);
+
+    const volDown = this.add
+      .text(GAME_WIDTH / 2 - 60, GAME_HEIGHT / 2 + 80, "[ - ]", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#fbbf24",
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    volDown.on("pointerdown", () => sfx.adjustVolume(-0.1));
+    this.pauseContainer.add(volDown);
+
+    const volUp = this.add
+      .text(GAME_WIDTH / 2 + 60, GAME_HEIGHT / 2 + 80, "[ + ]", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#fbbf24",
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    volUp.on("pointerdown", () => sfx.adjustVolume(0.1));
+    this.pauseContainer.add(volUp);
+
+    // Main menu button
+    const menuBtn = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, "[ Main Menu ]", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#f43f5e",
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    menuBtn.on("pointerdown", () => {
+      sfx.stopBgm();
+      this.scene.start("TitleScene");
+    });
+    menuBtn.on("pointerover", () => menuBtn.setColor("#ff6b6b"));
+    menuBtn.on("pointerout", () => menuBtn.setColor("#f43f5e"));
+    this.pauseContainer.add(menuBtn);
+  }
+
+  private resumeGame(): void {
+    this.manualPause = false;
+    this.isPaused = false;
+    this.pauseContainer.setVisible(false);
+    this.pauseContainer.removeAll(true);
   }
 
   private createJoystick(): void {
