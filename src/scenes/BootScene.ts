@@ -46,7 +46,7 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     // Create PMD walk animations
     createPmdAnimations(this);
-    this.scene.start("GameScene");
+    this.scene.start("TitleScene");
   }
 
   /** Generate colored circle/square textures so we can prototype without external assets */

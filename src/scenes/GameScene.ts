@@ -13,6 +13,7 @@ import {
   POKEMON_SPRITES,
   getDirectionFromVelocity,
 } from "../sprites/PmdSpriteLoader";
+import { sfx } from "../audio/SfxManager";
 
 /* ================================================================
    GameScene — Core prototype
@@ -457,6 +458,7 @@ export class GameScene extends Phaser.Scene {
     // Boss warning at 3:00 (180s elapsed)
     if (elapsed >= 180 && !this.bossWarningShown) {
       this.bossWarningShown = true;
+      sfx.playBossWarning();
       this.showWarning("WARNING!");
     }
 
@@ -748,6 +750,7 @@ export class GameScene extends Phaser.Scene {
   private onProjectileHitEnemy(proj: ProjectileData, enemy: EnemyData): void {
     enemy.hp -= proj.damage;
     proj.pierce--;
+    sfx.playHit();
 
     // Damage popup
     this.showDamagePopup(enemy.sprite.x, enemy.sprite.y, proj.damage, "#fbbf24");
@@ -837,6 +840,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private collectXpGem(gem: XpGem): void {
+    sfx.playPickup();
     this.xp += gem.value;
     gem.sprite.destroy();
     const idx = this.xpGems.indexOf(gem);
@@ -857,6 +861,7 @@ export class GameScene extends Phaser.Scene {
     if (this.ace.attackCooldown > 350) this.ace.attackCooldown -= 15;
 
     // Show selection UI for meaningful choices
+    sfx.playLevelUp();
     this.showLevelUpSelection();
   }
 
@@ -1116,6 +1121,7 @@ export class GameScene extends Phaser.Scene {
 
   private onAceDeath(): void {
     this.isPaused = true;
+    sfx.playDeath();
 
     const overlay = this.add.rectangle(
       GAME_WIDTH / 2,
@@ -1170,8 +1176,8 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.once("pointerdown", () => {
-      // Reset to cycle 1 on death, but keep legions for show
-      this.scene.restart({ cycleNumber: 1, legions: [] });
+      // Return to title screen on death
+      this.scene.start("TitleScene");
     });
   }
 
@@ -1321,6 +1327,7 @@ export class GameScene extends Phaser.Scene {
   private onBossDefeated(): void {
     this.boss = null;
     this.isPaused = true;
+    sfx.playStageClear();
 
     // Victory flash
     const flash = this.add

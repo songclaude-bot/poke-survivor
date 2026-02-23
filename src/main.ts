@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from "./config";
 import { BootScene } from "./scenes/BootScene";
+import { TitleScene } from "./scenes/TitleScene";
 import { GameScene } from "./scenes/GameScene";
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -19,7 +20,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, GameScene],
+  scene: [BootScene, TitleScene, GameScene],
   input: {
     activePointers: 2,
   },

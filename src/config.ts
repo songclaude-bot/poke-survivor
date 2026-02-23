@@ -6,7 +6,7 @@ export const GAME_HEIGHT = 844;
 export const CYCLE_DURATION_SEC = 300;
 
 /** Party */
-export const MAX_COMPANIONS = 3;
+export const MAX_COMPANIONS = 5;
 export const MAX_LEGIONS = 99;
 
 /** Combat */
