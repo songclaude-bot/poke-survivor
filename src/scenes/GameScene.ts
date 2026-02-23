@@ -1670,21 +1670,30 @@ export class GameScene extends Phaser.Scene {
       .setDepth(301)
       .setScrollFactor(0);
 
-    const stats = `Lv.${this.level}  Kill: ${this.kills}\nTime: ${this.formatTime(CYCLE_DURATION_SEC - this.cycleTimer)}`;
+    const evoName = EVOLUTION_CHAINS[this.ace.pokemonKey]?.[this.aceEvoStage]?.name ?? this.ace.pokemonKey;
+    const survivalTime = this.formatTime(CYCLE_DURATION_SEC - this.cycleTimer);
+    const statsLines = [
+      `${evoName}  Lv.${this.level}`,
+      ``,
+      `Kills: ${this.kills}    Wave: ${this.waveNumber}`,
+      `Cycle: ${this.cycleNumber}    Party: ${this.companions.length + 1}`,
+      `Time: ${survivalTime}`,
+    ];
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20, stats, {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 15, statsLines.join("\n"), {
         fontFamily: "monospace",
-        fontSize: "14px",
+        fontSize: "13px",
         color: "#ccc",
         align: "center",
+        lineSpacing: 4,
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0)
       .setDepth(301)
       .setScrollFactor(0);
 
     // Tap to retry
     const retry = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 80, "[ Tap to Retry ]", {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 120, "[ Tap to Retry ]", {
         fontFamily: "monospace",
         fontSize: "16px",
         color: "#667eea",

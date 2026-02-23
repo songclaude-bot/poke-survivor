@@ -100,7 +100,7 @@ export class TitleScene extends Phaser.Scene {
 
     // Version
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v0.5.0 — Phase 5: UI Polish", {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v0.12.0 — Evolution Update", {
         fontFamily: "monospace",
         fontSize: "9px",
         color: "#444",
