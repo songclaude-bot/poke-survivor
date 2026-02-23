@@ -98,9 +98,28 @@ export class TitleScene extends Phaser.Scene {
       repeat: -1,
     });
 
+    // High score from localStorage
+    try {
+      const raw = localStorage.getItem("poke-survivor-data");
+      if (raw) {
+        const data = JSON.parse(raw);
+        const hs = data.highScore;
+        if (hs && hs.kills > 0) {
+          this.add
+            .text(GAME_WIDTH / 2, GAME_HEIGHT - 100, `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
+              fontFamily: "monospace",
+              fontSize: "10px",
+              color: "#fbbf24",
+            })
+            .setOrigin(0.5)
+            .setDepth(10);
+        }
+      }
+    } catch { /* ignore */ }
+
     // Version
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v0.12.0 — Evolution Update", {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v0.14.0 — Achievement Update", {
         fontFamily: "monospace",
         fontSize: "9px",
         color: "#444",

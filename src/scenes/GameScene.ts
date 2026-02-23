@@ -146,6 +146,52 @@ const EVOLUTION_CHAINS: Record<string, EvolutionStage[]> = {
 
 // =================================================================
 
+// -- Achievement definitions --
+interface Achievement {
+  id: string;
+  name: string;
+  desc: string;
+  check: (s: GameScene) => boolean;
+}
+
+const ACHIEVEMENTS: Achievement[] = [
+  { id: "first_kill", name: "First Blood", desc: "Defeat your first enemy", check: s => s.getKills() >= 1 },
+  { id: "kill_50", name: "Hunter", desc: "Defeat 50 enemies", check: s => s.getKills() >= 50 },
+  { id: "kill_200", name: "Slayer", desc: "Defeat 200 enemies", check: s => s.getKills() >= 200 },
+  { id: "kill_500", name: "Exterminator", desc: "Defeat 500 enemies", check: s => s.getKills() >= 500 },
+  { id: "wave_5", name: "Survivor", desc: "Reach Wave 5", check: s => s.getWave() >= 5 },
+  { id: "wave_10", name: "Veteran", desc: "Reach Wave 10", check: s => s.getWave() >= 10 },
+  { id: "wave_20", name: "Elite", desc: "Reach Wave 20", check: s => s.getWave() >= 20 },
+  { id: "level_5", name: "Growing", desc: "Reach Level 5", check: s => s.getLevel() >= 5 },
+  { id: "level_10", name: "Experienced", desc: "Reach Level 10", check: s => s.getLevel() >= 10 },
+  { id: "evolve", name: "Evolution!", desc: "Evolve your ace Pokemon", check: s => s.getEvoStage() >= 1 },
+  { id: "full_party", name: "Squad Goals", desc: "Have 5 companions", check: s => s.getPartySize() >= 6 },
+  { id: "cycle_2", name: "New Game+", desc: "Reach Cycle 2", check: s => s.getCycle() >= 2 },
+  { id: "streak_15", name: "Combo Master", desc: "Get a 15 kill streak", check: s => s.getStreak() >= 15 },
+];
+
+// -- High score storage --
+const STORAGE_KEY = "poke-survivor-data";
+
+interface SaveData {
+  highScore: { kills: number; wave: number; level: number; cycle: number };
+  unlockedAchievements: string[];
+}
+
+function loadSaveData(): SaveData {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { highScore: { kills: 0, wave: 0, level: 0, cycle: 1 }, unlockedAchievements: [] };
+}
+
+function saveSaveData(data: SaveData): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch { /* ignore */ }
+}
+
 export class GameScene extends Phaser.Scene {
   // -- Core groups --
   private ace!: AceData;
@@ -220,6 +266,11 @@ export class GameScene extends Phaser.Scene {
   // -- Pause menu --
   private pauseContainer!: Phaser.GameObjects.Container;
   private manualPause = false;
+
+  // -- Achievements --
+  private saveData: SaveData = loadSaveData();
+  private achievementQueue: Achievement[] = [];
+  private showingAchievement = false;
 
   // -- Minimap + aim indicator --
   private minimapGfx!: Phaser.GameObjects.Graphics;
@@ -680,6 +731,7 @@ export class GameScene extends Phaser.Scene {
     this.updateXpGemMagnet();
     this.updateItems(dt);
     this.updateKillStreak();
+    this.checkAchievements();
     this.drawUI();
   }
 
@@ -1780,6 +1832,7 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = true;
     sfx.stopBgm();
     sfx.playDeath();
+    this.saveHighScore();
 
     const overlay = this.add.rectangle(
       GAME_WIDTH / 2,
@@ -1823,9 +1876,22 @@ export class GameScene extends Phaser.Scene {
       .setDepth(301)
       .setScrollFactor(0);
 
+    // High score line
+    const hs = this.saveData.highScore;
+    this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 105, `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
+        fontFamily: "monospace",
+        fontSize: "10px",
+        color: "#fbbf24",
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setDepth(301)
+      .setScrollFactor(0);
+
     // Tap to retry
     const retry = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 120, "[ Tap to Retry ]", {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140, "[ Tap to Retry ]", {
         fontFamily: "monospace",
         fontSize: "16px",
         color: "#667eea",
@@ -2481,5 +2547,90 @@ export class GameScene extends Phaser.Scene {
     this.levelUpContainer.removeAll(true);
     this.isPaused = false;
     this.pendingLevelUp = false;
+  }
+
+  // ================================================================
+  // ACHIEVEMENTS
+  // ================================================================
+
+  /** Public getters for achievement checks */
+  getKills(): number { return this.kills; }
+  getWave(): number { return this.waveNumber; }
+  getLevel(): number { return this.level; }
+  getEvoStage(): number { return this.aceEvoStage; }
+  getPartySize(): number { return 1 + this.companions.length; }
+  getCycle(): number { return this.cycleNumber; }
+  getStreak(): number { return this.killStreak; }
+
+  private checkAchievements(): void {
+    for (const ach of ACHIEVEMENTS) {
+      if (this.saveData.unlockedAchievements.includes(ach.id)) continue;
+      if (ach.check(this)) {
+        this.saveData.unlockedAchievements.push(ach.id);
+        this.achievementQueue.push(ach);
+        saveSaveData(this.saveData);
+      }
+    }
+    this.processAchievementQueue();
+  }
+
+  private processAchievementQueue(): void {
+    if (this.showingAchievement || this.achievementQueue.length === 0) return;
+
+    this.showingAchievement = true;
+    const ach = this.achievementQueue.shift()!;
+
+    // Achievement banner at top
+    const banner = this.add
+      .rectangle(GAME_WIDTH / 2, -40, GAME_WIDTH - 20, 50, 0x1a1a2e, 0.95)
+      .setStrokeStyle(1, 0xfbbf24, 0.8)
+      .setDepth(700)
+      .setScrollFactor(0);
+
+    const achText = this.add
+      .text(GAME_WIDTH / 2, -40, `★ ${ach.name}\n${ach.desc}`, {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#fbbf24",
+        align: "center",
+        lineSpacing: 2,
+      })
+      .setOrigin(0.5)
+      .setDepth(701)
+      .setScrollFactor(0);
+
+    // Slide in from top
+    this.tweens.add({
+      targets: [banner, achText],
+      y: 70,
+      duration: 400,
+      ease: "Back.easeOut",
+      onComplete: () => {
+        this.time.delayedCall(2000, () => {
+          this.tweens.add({
+            targets: [banner, achText],
+            y: -40,
+            duration: 300,
+            ease: "Cubic.easeIn",
+            onComplete: () => {
+              banner.destroy();
+              achText.destroy();
+              this.showingAchievement = false;
+              this.processAchievementQueue();
+            },
+          });
+        });
+      },
+    });
+  }
+
+  private saveHighScore(): void {
+    const hs = this.saveData.highScore;
+    let changed = false;
+    if (this.kills > hs.kills) { hs.kills = this.kills; changed = true; }
+    if (this.waveNumber > hs.wave) { hs.wave = this.waveNumber; changed = true; }
+    if (this.level > hs.level) { hs.level = this.level; changed = true; }
+    if (this.cycleNumber > hs.cycle) { hs.cycle = this.cycleNumber; changed = true; }
+    if (changed) saveSaveData(this.saveData);
   }
 }
