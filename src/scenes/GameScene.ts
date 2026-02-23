@@ -142,6 +142,9 @@ export class GameScene extends Phaser.Scene {
   private levelText!: Phaser.GameObjects.Text;
   private cycleText!: Phaser.GameObjects.Text;
 
+  // -- Damage popup pool --
+  private dmgPopups: Phaser.GameObjects.Text[] = [];
+
   // -- World camera offset (infinite map illusion) --
   private worldOffset = new Phaser.Math.Vector2(0, 0);
 
@@ -543,9 +546,9 @@ export class GameScene extends Phaser.Scene {
 
   /** Enemy pokemon pool per tier */
   private static readonly ENEMY_POOL: string[][] = [
-    ["rattata", "zubat"],      // Tier 0: early
-    ["geodude", "gastly"],     // Tier 1: mid
-    ["pinsir"],                // Tier 2: elite
+    ["rattata", "zubat"],               // Tier 0: early
+    ["geodude", "gastly", "bulbasaur"], // Tier 1: mid
+    ["pinsir", "charmander"],           // Tier 2: elite
   ];
 
   private spawnEnemy(elapsed: number): void {
@@ -746,10 +749,13 @@ export class GameScene extends Phaser.Scene {
     enemy.hp -= proj.damage;
     proj.pierce--;
 
+    // Damage popup
+    this.showDamagePopup(enemy.sprite.x, enemy.sprite.y, proj.damage, "#fbbf24");
+
     // Flash enemy white
     enemy.sprite.setTint(0xffffff);
     this.time.delayedCall(80, () => {
-      if (enemy.sprite.active) enemy.sprite.clearTint();
+      if (enemy.sprite.active) enemy.sprite.setTint(0xff8888);
     });
 
     if (proj.pierce <= 0) {
@@ -863,12 +869,14 @@ export class GameScene extends Phaser.Scene {
     { key: "squirtle", type: "projectile" },
     { key: "gastly", type: "orbital" },
     { key: "geodude", type: "area" },
+    { key: "charmander", type: "projectile" },
+    { key: "bulbasaur", type: "area" },
   ];
 
   private addCompanion(): void {
-    if (this.companions.length >= 3) return;
+    if (this.companions.length >= 5) return;
 
-    const pool = GameScene.COMPANION_POOL[this.companions.length % 3];
+    const pool = GameScene.COMPANION_POOL[this.companions.length % GameScene.COMPANION_POOL.length];
     const type = pool.type;
     const pokemonKey = pool.key;
     const pmdTexKey = `pmd-${pokemonKey}`;
@@ -952,9 +960,10 @@ export class GameScene extends Phaser.Scene {
           );
           if (d < c.attackRange) {
             e.hp -= c.atk;
+            this.showDamagePopup(e.sprite.x, e.sprite.y, c.atk, "#c084fc");
             e.sprite.setTint(0xff88ff);
             this.time.delayedCall(60, () => {
-              if (e.sprite.active) e.sprite.clearTint();
+              if (e.sprite.active) e.sprite.setTint(0xff8888);
             });
             if (e.hp <= 0) this.onEnemyDeath(e);
             c.lastAttackTime = now;
@@ -991,6 +1000,7 @@ export class GameScene extends Phaser.Scene {
           );
           if (d < c.attackRange) {
             e.hp -= c.atk;
+            this.showDamagePopup(e.sprite.x, e.sprite.y, c.atk, "#4ade80");
             if (e.hp <= 0) this.onEnemyDeath(e);
             hit = true;
           }
@@ -1074,10 +1084,11 @@ export class GameScene extends Phaser.Scene {
           const d = Phaser.Math.Distance.Between(clampX, clampY, e.sprite.x, e.sprite.y);
           if (d < legion.attackRange) {
             e.hp -= dmg;
+            this.showDamagePopup(e.sprite.x, e.sprite.y, dmg, "#67e8f9");
             // Flash enemy with legion color
             e.sprite.setTint(color);
             this.time.delayedCall(60, () => {
-              if (e.sprite.active) e.sprite.clearTint();
+              if (e.sprite.active) e.sprite.setTint(0xff8888);
             });
             if (e.hp <= 0) this.onEnemyDeath(e);
             break; // One target per attack
@@ -1093,6 +1104,10 @@ export class GameScene extends Phaser.Scene {
 
   private damageAce(amount: number): void {
     this.ace.hp -= amount;
+    // Show damage on ace (throttled via popup pool)
+    if (amount >= 0.5) {
+      this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y, amount, "#f43f5e");
+    }
     if (this.ace.hp <= 0) {
       this.ace.hp = 0;
       this.onAceDeath();
@@ -1481,23 +1496,25 @@ export class GameScene extends Phaser.Scene {
     this.levelUpContainer.add(title);
 
     // Generate 3 choices
-    type Choice = { label: string; desc: string; action: () => void; color: number };
+    type Choice = { label: string; desc: string; action: () => void; color: number; portrait?: string };
     const choices: Choice[] = [];
 
     // Choice A: New companion (if slots available)
-    if (this.companions.length < 3) {
-      const types: Array<"projectile" | "orbital" | "area"> = ["projectile", "orbital", "area"];
-      const nextType = types[this.companions.length % 3];
-      const names: Record<string, string> = { projectile: "Squirtle", orbital: "Gastly", area: "Geodude" };
-      const descs: Record<string, string> = {
+    if (this.companions.length < 5) {
+      const poolIdx = this.companions.length % GameScene.COMPANION_POOL.length;
+      const pool = GameScene.COMPANION_POOL[poolIdx];
+      const nextType = pool.type;
+      const pokeName = POKEMON_SPRITES[pool.key]?.name ?? pool.key;
+      const typeDescs: Record<string, string> = {
         projectile: "Fires projectiles at enemies",
         orbital: "Orbits around you, contact damage",
         area: "Periodic area-of-effect damage",
       };
       choices.push({
-        label: `+ ${names[nextType]}`,
-        desc: descs[nextType],
+        label: `+ ${pokeName}`,
+        desc: typeDescs[nextType],
         color: 0x00ddff,
+        portrait: pool.key,
         action: () => this.addCompanion(),
       });
     }
@@ -1507,6 +1524,7 @@ export class GameScene extends Phaser.Scene {
       label: "ATK +25%",
       desc: `${this.ace.atk} → ${Math.floor(this.ace.atk * 1.25)}`,
       color: 0xf43f5e,
+      portrait: this.ace.pokemonKey,
       action: () => {
         this.ace.atk = Math.floor(this.ace.atk * 1.25);
         this.companions.forEach((c) => (c.atk = Math.floor(c.atk * 1.15)));
@@ -1518,6 +1536,7 @@ export class GameScene extends Phaser.Scene {
       label: "MAX HP +30",
       desc: `Heal to full (${this.ace.maxHp + 30} HP)`,
       color: 0x3bc95e,
+      portrait: this.ace.pokemonKey,
       action: () => {
         this.ace.maxHp += 30;
         this.ace.hp = this.ace.maxHp;
@@ -1530,6 +1549,7 @@ export class GameScene extends Phaser.Scene {
         label: "SPEED +20%",
         desc: `Move faster, attack faster`,
         color: 0xfbbf24,
+        portrait: this.ace.pokemonKey,
         action: () => {
           this.ace.speed = Math.floor(this.ace.speed * 1.2);
           this.ace.attackCooldown = Math.max(200, this.ace.attackCooldown - 80);
@@ -1544,6 +1564,8 @@ export class GameScene extends Phaser.Scene {
 
     choices.forEach((choice, i) => {
       const cy = startY + i * (cardH + gap);
+      const hasPortrait = choice.portrait && this.textures.exists(`portrait-${choice.portrait}`);
+      const textOffsetX = hasPortrait ? 30 : 0;
 
       // Card background
       const card = this.add
@@ -1553,9 +1575,19 @@ export class GameScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
       this.levelUpContainer.add(card);
 
+      // Portrait image (left side of card)
+      if (hasPortrait) {
+        const portrait = this.add
+          .image(50, cy + cardH / 2, `portrait-${choice.portrait!}`)
+          .setDisplaySize(48, 48)
+          .setScrollFactor(0)
+          .setDepth(501);
+        this.levelUpContainer.add(portrait);
+      }
+
       // Label
       const lbl = this.add
-        .text(GAME_WIDTH / 2, cy + 25, choice.label, {
+        .text(GAME_WIDTH / 2 + textOffsetX, cy + 25, choice.label, {
           fontFamily: "monospace",
           fontSize: "18px",
           color: `#${choice.color.toString(16).padStart(6, "0")}`,
@@ -1566,7 +1598,7 @@ export class GameScene extends Phaser.Scene {
 
       // Description
       const desc = this.add
-        .text(GAME_WIDTH / 2, cy + 55, choice.desc, {
+        .text(GAME_WIDTH / 2 + textOffsetX, cy + 55, choice.desc, {
           fontFamily: "monospace",
           fontSize: "11px",
           color: "#888",
@@ -1584,6 +1616,44 @@ export class GameScene extends Phaser.Scene {
       // Hover effect
       card.on("pointerover", () => card.setFillStyle(0x1a1a25, 1));
       card.on("pointerout", () => card.setFillStyle(0x111118, 0.95));
+    });
+  }
+
+  // ================================================================
+  // DAMAGE POPUPS
+  // ================================================================
+
+  private showDamagePopup(x: number, y: number, amount: number, color = "#fff"): void {
+    // Reuse pooled text if available
+    let txt = this.dmgPopups.pop();
+    if (txt) {
+      txt.setPosition(x, y - 10);
+      txt.setText(Math.ceil(amount).toString());
+      txt.setStyle({ color });
+      txt.setAlpha(1).setVisible(true);
+    } else {
+      txt = this.add
+        .text(x, y - 10, Math.ceil(amount).toString(), {
+          fontFamily: "monospace",
+          fontSize: "12px",
+          color,
+          stroke: "#000",
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5)
+        .setDepth(300);
+    }
+
+    this.tweens.add({
+      targets: txt,
+      y: txt.y - 24,
+      alpha: 0,
+      duration: 600,
+      onComplete: () => {
+        txt.setVisible(false);
+        if (this.dmgPopups.length < 30) this.dmgPopups.push(txt);
+        else txt.destroy();
+      },
     });
   }
 
