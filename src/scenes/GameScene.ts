@@ -34,6 +34,8 @@ interface AceData {
   lastAttackTime: number;
 }
 
+type EnemyBehavior = "chase" | "circle" | "charge" | "swarm";
+
 interface EnemyData {
   sprite: Phaser.Physics.Arcade.Sprite;
   pokemonKey: string;
@@ -42,6 +44,13 @@ interface EnemyData {
   atk: number;
   speed: number;
   hpBar: Phaser.GameObjects.Graphics;
+  behavior: EnemyBehavior;
+  /** For circle behavior: orbit angle */
+  orbitAngle?: number;
+  /** For charge behavior: charge cooldown timer */
+  chargeTimer?: number;
+  /** For charge behavior: is currently charging */
+  isCharging?: boolean;
 }
 
 interface ProjectileData {
@@ -64,6 +73,15 @@ interface CompanionData {
 interface XpGem {
   sprite: Phaser.Physics.Arcade.Sprite;
   value: number;
+}
+
+type ItemType = "heal" | "bomb" | "magnet";
+
+interface ItemDrop {
+  sprite: Phaser.Physics.Arcade.Sprite;
+  type: ItemType;
+  /** Remaining lifetime in ms before despawn */
+  ttl: number;
 }
 
 interface LegionData {
@@ -98,11 +116,13 @@ export class GameScene extends Phaser.Scene {
   private projectiles: ProjectileData[] = [];
   private companions: CompanionData[] = [];
   private xpGems: XpGem[] = [];
+  private items: ItemDrop[] = [];
 
   // -- Phaser groups for collision --
   private enemyGroup!: Phaser.Physics.Arcade.Group;
   private projectileGroup!: Phaser.Physics.Arcade.Group;
   private xpGemGroup!: Phaser.Physics.Arcade.Group;
+  private itemGroup!: Phaser.Physics.Arcade.Group;
 
   // -- Joystick state --
   private joyBase!: Phaser.GameObjects.Sprite;
@@ -410,6 +430,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyGroup = this.physics.add.group({ runChildUpdate: false });
     this.projectileGroup = this.physics.add.group({ runChildUpdate: false });
     this.xpGemGroup = this.physics.add.group({ runChildUpdate: false });
+    this.itemGroup = this.physics.add.group({ runChildUpdate: false });
   }
 
   private setupCollisions(): void {
@@ -456,6 +477,7 @@ export class GameScene extends Phaser.Scene {
     this.updateLegions(dt);
     this.updateProjectiles(dt);
     this.updateXpGemMagnet();
+    this.updateItems(dt);
     this.updateKillStreak();
     this.drawUI();
   }
@@ -611,6 +633,18 @@ export class GameScene extends Phaser.Scene {
 
     const hpBarGfx = this.add.graphics().setDepth(6);
 
+    // Assign behavior based on pokemon
+    const behaviorMap: Record<string, EnemyBehavior> = {
+      rattata: "swarm",
+      zubat: "circle",
+      gastly: "circle",
+      geodude: "charge",
+      bulbasaur: "chase",
+      charmander: "charge",
+      pinsir: "charge",
+    };
+    const behavior = behaviorMap[pokemonKey] ?? "chase";
+
     const enemy: EnemyData = {
       sprite,
       pokemonKey,
@@ -619,6 +653,10 @@ export class GameScene extends Phaser.Scene {
       atk: Math.round((5 + tier * 3 + elapsed * 0.02) * cycleMult),
       speed: (40 + Math.random() * 30) * spdMult,
       hpBar: hpBarGfx,
+      behavior,
+      orbitAngle: behavior === "circle" ? Math.random() * Math.PI * 2 : undefined,
+      chargeTimer: behavior === "charge" ? 3000 + Math.random() * 2000 : undefined,
+      isCharging: false,
     };
     this.enemies.push(enemy);
   }
@@ -627,9 +665,10 @@ export class GameScene extends Phaser.Scene {
   // ENEMY AI
   // ================================================================
 
-  private updateEnemies(_dt: number): void {
+  private updateEnemies(dt: number): void {
     const ax = this.ace.sprite.x;
     const ay = this.ace.sprite.y;
+    const dtMs = dt * 1000;
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -638,16 +677,114 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
 
-      // Chase player
       const dx = ax - e.sprite.x;
       const dy = ay - e.sprite.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist > 1) {
-        e.sprite.setVelocity(
-          (dx / dist) * e.speed,
-          (dy / dist) * e.speed,
-        );
+      // -- Behavior-based movement --
+      switch (e.behavior) {
+        case "chase":
+        default:
+          // Direct pursuit
+          if (dist > 1) {
+            e.sprite.setVelocity(
+              (dx / dist) * e.speed,
+              (dy / dist) * e.speed,
+            );
+          }
+          break;
+
+        case "circle": {
+          // Orbit around player, gradually closing in
+          const orbitRadius = Math.max(80, dist * 0.95);
+          e.orbitAngle = (e.orbitAngle ?? 0) + 1.5 * dt;
+          const targetX = ax + Math.cos(e.orbitAngle) * orbitRadius;
+          const targetY = ay + Math.sin(e.orbitAngle) * orbitRadius;
+          const tdx = targetX - e.sprite.x;
+          const tdy = targetY - e.sprite.y;
+          const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
+          if (tdist > 1) {
+            e.sprite.setVelocity(
+              (tdx / tdist) * e.speed * 1.2,
+              (tdy / tdist) * e.speed * 1.2,
+            );
+          }
+          break;
+        }
+
+        case "charge": {
+          // Wait at distance, then dash at player
+          if (!e.isCharging) {
+            e.chargeTimer = (e.chargeTimer ?? 2000) - dtMs;
+            // Idle/slow approach
+            if (dist > 120) {
+              e.sprite.setVelocity(
+                (dx / dist) * e.speed * 0.3,
+                (dy / dist) * e.speed * 0.3,
+              );
+            } else {
+              e.sprite.setVelocity(0, 0);
+            }
+            // Flash white before charging
+            if ((e.chargeTimer ?? 0) < 400 && (e.chargeTimer ?? 0) > 0) {
+              e.sprite.setTint(0xffffff);
+            }
+            if ((e.chargeTimer ?? 0) <= 0) {
+              e.isCharging = true;
+              e.chargeTimer = 800; // Charge duration
+              e.sprite.setTint(0xff4444);
+              // Dash toward player's current position
+              if (dist > 1) {
+                e.sprite.setVelocity(
+                  (dx / dist) * e.speed * 3.5,
+                  (dy / dist) * e.speed * 3.5,
+                );
+              }
+            }
+          } else {
+            // Currently charging — maintain velocity, count down
+            e.chargeTimer = (e.chargeTimer ?? 0) - dtMs;
+            if ((e.chargeTimer ?? 0) <= 0) {
+              e.isCharging = false;
+              e.chargeTimer = 2500 + Math.random() * 1500;
+              e.sprite.setTint(0xff8888); // Restore enemy tint
+              e.sprite.setVelocity(0, 0);
+            }
+          }
+          break;
+        }
+
+        case "swarm": {
+          // Group toward nearest swarm ally, then chase as pack
+          let nearestSwarmDx = 0;
+          let nearestSwarmDy = 0;
+          let nearestSwarmDist = Infinity;
+          for (const other of this.enemies) {
+            if (other === e || other.behavior !== "swarm" || !other.sprite.active) continue;
+            const sdx = other.sprite.x - e.sprite.x;
+            const sdy = other.sprite.y - e.sprite.y;
+            const sd = Math.sqrt(sdx * sdx + sdy * sdy);
+            if (sd < nearestSwarmDist && sd > 5) {
+              nearestSwarmDist = sd;
+              nearestSwarmDx = sdx;
+              nearestSwarmDy = sdy;
+            }
+          }
+          // Blend: chase player + cluster toward nearest ally
+          let vx = 0;
+          let vy = 0;
+          if (dist > 1) {
+            vx = (dx / dist) * e.speed;
+            vy = (dy / dist) * e.speed;
+          }
+          // If ally is nearby but not too close, group up
+          if (nearestSwarmDist < 150 && nearestSwarmDist > 25) {
+            vx += (nearestSwarmDx / nearestSwarmDist) * e.speed * 0.4;
+            vy += (nearestSwarmDy / nearestSwarmDist) * e.speed * 0.4;
+          }
+          e.sprite.setVelocity(vx, vy);
+          break;
+        }
       }
 
       // Touch damage to player
@@ -831,6 +968,11 @@ export class GameScene extends Phaser.Scene {
       : 3 + Math.floor(enemy.maxHp / 10);
     this.spawnXpGem(enemy.sprite.x, enemy.sprite.y, xpValue);
 
+    // Random item drop (8% chance, boss always drops)
+    if (wasBoss || Math.random() < 0.08) {
+      this.spawnItem(enemy.sprite.x, enemy.sprite.y);
+    }
+
     // Cleanup
     const idx = this.enemies.indexOf(enemy);
     if (idx >= 0) this.cleanupEnemy(idx);
@@ -900,6 +1042,136 @@ export class GameScene extends Phaser.Scene {
       this.xpToNext = Math.floor(XP_PER_LEVEL_BASE * Math.pow(XP_LEVEL_SCALE, this.level - 1));
       this.onLevelUp();
     }
+  }
+
+  // ================================================================
+  // ITEM DROPS
+  // ================================================================
+
+  private spawnItem(x: number, y: number): void {
+    const types: ItemType[] = ["heal", "bomb", "magnet"];
+    const weights = [0.5, 0.25, 0.25]; // heal more common
+    let r = Math.random();
+    let type: ItemType = "heal";
+    for (let i = 0; i < types.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { type = types[i]; break; }
+    }
+
+    const texKey = `item-${type}`;
+    const sprite = this.physics.add.sprite(x, y, texKey).setDepth(4);
+    this.itemGroup.add(sprite);
+    sprite.body!.setCircle(12);
+
+    // Bounce-in animation
+    sprite.setScale(0);
+    this.tweens.add({
+      targets: sprite,
+      scaleX: 1.5, scaleY: 1.5,
+      duration: 200,
+      ease: "Back.easeOut",
+      onComplete: () => {
+        if (sprite.active) {
+          this.tweens.add({
+            targets: sprite,
+            scaleX: 1, scaleY: 1,
+            duration: 150,
+          });
+        }
+      },
+    });
+
+    this.items.push({ sprite, type, ttl: 10000 }); // 10 second lifetime
+  }
+
+  private updateItems(dt: number): void {
+    const ax = this.ace.sprite.x;
+    const ay = this.ace.sprite.y;
+
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const item = this.items[i];
+      if (!item.sprite.active) {
+        item.sprite.destroy();
+        this.items.splice(i, 1);
+        continue;
+      }
+
+      item.ttl -= dt * 1000;
+
+      // Blink when about to expire
+      if (item.ttl < 3000) {
+        item.sprite.setAlpha(Math.sin(this.time.now * 0.01) * 0.3 + 0.7);
+      }
+
+      // Despawn
+      if (item.ttl <= 0) {
+        item.sprite.destroy();
+        this.items.splice(i, 1);
+        continue;
+      }
+
+      // Pickup check
+      const dist = Phaser.Math.Distance.Between(ax, ay, item.sprite.x, item.sprite.y);
+      if (dist < 24) {
+        this.collectItem(item);
+        this.items.splice(i, 1);
+      }
+    }
+  }
+
+  private collectItem(item: ItemDrop): void {
+    sfx.playPickup();
+
+    switch (item.type) {
+      case "heal": {
+        const healAmt = Math.floor(this.ace.maxHp * 0.25);
+        this.ace.hp = Math.min(this.ace.hp + healAmt, this.ace.maxHp);
+        this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 20, `+${healAmt}`, "#44ff44");
+        break;
+      }
+      case "bomb": {
+        // Damage all enemies on screen
+        this.cameras.main.flash(150, 255, 160, 0);
+        this.cameras.main.shake(200, 0.01);
+        for (const e of this.enemies) {
+          if (!e.sprite.active) continue;
+          const dist = Phaser.Math.Distance.Between(
+            this.ace.sprite.x, this.ace.sprite.y,
+            e.sprite.x, e.sprite.y,
+          );
+          if (dist < 300) {
+            e.hp -= Math.floor(e.maxHp * 0.5);
+            e.sprite.setTint(0xffffff);
+            this.time.delayedCall(100, () => {
+              if (e.sprite.active) e.sprite.setTint(0xff8888);
+            });
+            if (e.hp <= 0) {
+              this.onEnemyDeath(e);
+            }
+          }
+        }
+        this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 30, "BOOM!", "#ff6600");
+        break;
+      }
+      case "magnet": {
+        // Pull all XP gems to player instantly
+        for (const gem of this.xpGems) {
+          if (!gem.sprite.active) continue;
+          const angle = Math.atan2(
+            this.ace.sprite.y - gem.sprite.y,
+            this.ace.sprite.x - gem.sprite.x,
+          );
+          gem.sprite.setVelocity(
+            Math.cos(angle) * 600,
+            Math.sin(angle) * 600,
+          );
+        }
+        this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 30, "MAGNET!", "#66ccff");
+        break;
+      }
+    }
+
+    item.sprite.destroy();
   }
 
   private onLevelUp(): void {
@@ -1434,8 +1706,9 @@ export class GameScene extends Phaser.Scene {
       atk: 12 + this.cycleNumber * 3,
       speed: 30,
       hpBar: hpBarGfx,
+      behavior: "chase",
     };
-    this.enemies.push(this.boss);
+    this.enemies.push(this.boss!);
 
     this.bossNameText.setText(`${bossName} — Cycle ${this.cycleNumber}`).setVisible(true);
 
@@ -1810,17 +2083,18 @@ export class GameScene extends Phaser.Scene {
   // DAMAGE POPUPS
   // ================================================================
 
-  private showDamagePopup(x: number, y: number, amount: number, color = "#fff"): void {
+  private showDamagePopup(x: number, y: number, amount: number | string, color = "#fff"): void {
+    const label = typeof amount === "string" ? amount : Math.ceil(amount).toString();
     // Reuse pooled text if available
     let txt = this.dmgPopups.pop();
     if (txt) {
       txt.setPosition(x, y - 10);
-      txt.setText(Math.ceil(amount).toString());
+      txt.setText(label);
       txt.setStyle({ color });
       txt.setAlpha(1).setVisible(true);
     } else {
       txt = this.add
-        .text(x, y - 10, Math.ceil(amount).toString(), {
+        .text(x, y - 10, label, {
           fontFamily: "monospace",
           fontSize: "12px",
           color,

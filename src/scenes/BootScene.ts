@@ -72,8 +72,10 @@ export class BootScene extends Phaser.Scene {
     // XP gem — small green diamond
     this.makeDiamond("xp-gem", 6, COLORS.xpBlue);
 
-    // Item box — gold square
-    this.makeRect("item-box", 12, 12, COLORS.gold);
+    // Item drops
+    this.makeCircle("item-heal", 8, 0x44ff44);   // green = heal
+    this.makeCircle("item-bomb", 8, 0xff6600);   // orange = bomb
+    this.makeCircle("item-magnet", 8, 0x66ccff); // light blue = magnet
 
     // Virtual joystick parts
     this.makeCircle("joy-base", 48, 0x333344, 0.4);
