@@ -148,6 +148,10 @@ export class GameScene extends Phaser.Scene {
   // -- Damage popup pool --
   private dmgPopups: Phaser.GameObjects.Text[] = [];
 
+  // -- Minimap + aim indicator --
+  private minimapGfx!: Phaser.GameObjects.Graphics;
+  private aimGfx!: Phaser.GameObjects.Graphics;
+
   // -- World camera offset (infinite map illusion) --
   private worldOffset = new Phaser.Math.Vector2(0, 0);
 
@@ -334,6 +338,12 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100)
       .setScrollFactor(0)
       .setVisible(false);
+
+    // Minimap
+    this.minimapGfx = this.add.graphics().setDepth(99).setScrollFactor(0);
+
+    // Aim indicator (world-space, follows camera)
+    this.aimGfx = this.add.graphics().setDepth(8);
 
     // Level-up selection container (hidden)
     this.levelUpContainer = this.add.container(0, 0).setDepth(500).setScrollFactor(0).setVisible(false);
@@ -589,6 +599,16 @@ export class GameScene extends Phaser.Scene {
       sprite.setTint(0xff8888);
     }
 
+    // Spawn-in animation: scale from 0 → 1
+    sprite.setScale(0);
+    this.tweens.add({
+      targets: sprite,
+      scaleX: usePmd ? 1 : 1,
+      scaleY: usePmd ? 1 : 1,
+      duration: 250,
+      ease: "Back.easeOut",
+    });
+
     const hpBarGfx = this.add.graphics().setDepth(6);
 
     const enemy: EnemyData = {
@@ -667,14 +687,19 @@ export class GameScene extends Phaser.Scene {
 
   private updateAceAutoAttack(): void {
     const now = this.time.now;
+
+    // Draw aim indicator to nearest enemy
+    this.aimGfx.clear();
+    const aimTarget = this.findNearestEnemy(this.ace.sprite.x, this.ace.sprite.y, this.ace.attackRange);
+    if (aimTarget) {
+      this.aimGfx.lineStyle(1, 0xfbbf24, 0.2);
+      this.aimGfx.lineBetween(this.ace.sprite.x, this.ace.sprite.y, aimTarget.sprite.x, aimTarget.sprite.y);
+    }
+
     if (now - this.ace.lastAttackTime < this.ace.attackCooldown) return;
 
     // Find nearest enemy
-    const target = this.findNearestEnemy(
-      this.ace.sprite.x,
-      this.ace.sprite.y,
-      this.ace.attackRange,
-    );
+    const target = aimTarget;
     if (!target) return;
 
     this.ace.lastAttackTime = now;
@@ -1270,6 +1295,72 @@ export class GameScene extends Phaser.Scene {
     this.levelText.setText(`Lv.${this.level}`);
     const legionInfo = this.legions.length > 0 ? ` [${this.legions.length}]` : "";
     this.cycleText.setText(`Cycle ${this.cycleNumber}${legionInfo}`);
+
+    // Minimap (bottom-right corner)
+    this.drawMinimap();
+  }
+
+  private drawMinimap(): void {
+    this.minimapGfx.clear();
+    const mapSize = 60;
+    const mapX = GAME_WIDTH - mapSize - 8;
+    const mapY = GAME_HEIGHT - mapSize - 28;
+    const range = 400; // World units shown in minimap
+
+    // Background
+    this.minimapGfx.fillStyle(0x000000, 0.4);
+    this.minimapGfx.fillRect(mapX, mapY, mapSize, mapSize);
+    this.minimapGfx.lineStyle(1, 0x333355, 0.6);
+    this.minimapGfx.strokeRect(mapX, mapY, mapSize, mapSize);
+
+    const cx = mapX + mapSize / 2;
+    const cy = mapY + mapSize / 2;
+    const ax = this.ace.sprite.x;
+    const ay = this.ace.sprite.y;
+
+    // Enemies (red dots)
+    this.minimapGfx.fillStyle(0xff4444, 0.7);
+    for (const e of this.enemies) {
+      const dx = (e.sprite.x - ax) / range * (mapSize / 2);
+      const dy = (e.sprite.y - ay) / range * (mapSize / 2);
+      if (Math.abs(dx) < mapSize / 2 && Math.abs(dy) < mapSize / 2) {
+        this.minimapGfx.fillRect(cx + dx - 1, cy + dy - 1, 2, 2);
+      }
+    }
+
+    // Companions (cyan dots)
+    this.minimapGfx.fillStyle(0x00ddff, 0.8);
+    for (const c of this.companions) {
+      const dx = (c.sprite.x - ax) / range * (mapSize / 2);
+      const dy = (c.sprite.y - ay) / range * (mapSize / 2);
+      this.minimapGfx.fillCircle(cx + dx, cy + dy, 1.5);
+    }
+
+    // XP gems (green tiny dots)
+    this.minimapGfx.fillStyle(0x667eea, 0.5);
+    for (const g of this.xpGems) {
+      const dx = (g.sprite.x - ax) / range * (mapSize / 2);
+      const dy = (g.sprite.y - ay) / range * (mapSize / 2);
+      if (Math.abs(dx) < mapSize / 2 && Math.abs(dy) < mapSize / 2) {
+        this.minimapGfx.fillRect(cx + dx, cy + dy, 1, 1);
+      }
+    }
+
+    // Player (white center dot)
+    this.minimapGfx.fillStyle(0xffd700, 1);
+    this.minimapGfx.fillCircle(cx, cy, 2);
+
+    // Boss (magenta blip)
+    if (this.boss) {
+      const dx = (this.boss.sprite.x - ax) / range * (mapSize / 2);
+      const dy = (this.boss.sprite.y - ay) / range * (mapSize / 2);
+      this.minimapGfx.fillStyle(0xff00ff, 1);
+      this.minimapGfx.fillCircle(
+        Phaser.Math.Clamp(cx + dx, mapX + 2, mapX + mapSize - 2),
+        Phaser.Math.Clamp(cy + dy, mapY + 2, mapY + mapSize - 2),
+        3,
+      );
+    }
   }
 
   // ================================================================
