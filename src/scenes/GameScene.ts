@@ -107,6 +107,43 @@ interface CyclePassData {
   legions?: LegionData[];
 }
 
+// -- Evolution data --
+interface EvolutionStage {
+  name: string;
+  atkMult: number;
+  hpMult: number;
+  speedMult: number;
+  scale: number;
+}
+
+const EVOLUTION_CHAINS: Record<string, EvolutionStage[]> = {
+  pikachu: [
+    { name: "Pikachu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.5 },
+    { name: "Raichu ★", atkMult: 1.5, hpMult: 1.3, speedMult: 1.15, scale: 1.7 },
+    { name: "Raichu GX ★★", atkMult: 2.2, hpMult: 1.8, speedMult: 1.3, scale: 1.9 },
+  ],
+  squirtle: [
+    { name: "Squirtle", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Wartortle ★", atkMult: 1.5, hpMult: 1.4, speedMult: 1.1, scale: 1.4 },
+  ],
+  charmander: [
+    { name: "Charmander", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Charmeleon ★", atkMult: 1.6, hpMult: 1.3, speedMult: 1.15, scale: 1.4 },
+  ],
+  bulbasaur: [
+    { name: "Bulbasaur", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Ivysaur ★", atkMult: 1.4, hpMult: 1.5, speedMult: 1.1, scale: 1.4 },
+  ],
+  gastly: [
+    { name: "Gastly", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Haunter ★", atkMult: 1.7, hpMult: 1.2, speedMult: 1.2, scale: 1.4 },
+  ],
+  geodude: [
+    { name: "Geodude", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Graveler ★", atkMult: 1.4, hpMult: 1.6, speedMult: 1.0, scale: 1.5 },
+  ],
+};
+
 // =================================================================
 
 export class GameScene extends Phaser.Scene {
@@ -156,6 +193,10 @@ export class GameScene extends Phaser.Scene {
   private isPaused = false;
   private killStreak = 0;
   private lastKillTime = 0;
+
+  // -- Evolution --
+  private aceEvoStage = 0;
+  private companionEvoStages: Map<string, number> = new Map();
 
   // -- Wave system --
   private waveNumber = 0;
@@ -228,6 +269,8 @@ export class GameScene extends Phaser.Scene {
     this.spawnTimer = 0;
     this.isPaused = false;
     this.pendingLevelUp = false;
+    this.aceEvoStage = 0;
+    this.companionEvoStages = new Map();
     this.waveNumber = 0;
     this.waveTimer = 0;
     this.waveRestTimer = 0;
@@ -647,6 +690,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showWaveClearText(): void {
+    // Auto-evolve companions every 5 waves
+    if (this.waveNumber > 0 && this.waveNumber % 5 === 0) {
+      for (const c of this.companions) {
+        this.evolveCompanion(c);
+      }
+    }
+
     const txt = this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "WAVE CLEAR!", {
         fontFamily: "monospace",
@@ -1270,6 +1320,74 @@ export class GameScene extends Phaser.Scene {
     // Show selection UI for meaningful choices
     sfx.playLevelUp();
     this.showLevelUpSelection();
+  }
+
+  private evolveAce(): void {
+    const chain = EVOLUTION_CHAINS[this.ace.pokemonKey];
+    if (!chain || this.aceEvoStage >= chain.length - 1) return;
+
+    this.aceEvoStage++;
+    const stage = chain[this.aceEvoStage];
+
+    // Apply stat multipliers (relative to base stage)
+    const prevStage = chain[this.aceEvoStage - 1];
+    const atkBoost = stage.atkMult / prevStage.atkMult;
+    const hpBoost = stage.hpMult / prevStage.hpMult;
+    const spdBoost = stage.speedMult / prevStage.speedMult;
+
+    this.ace.atk = Math.floor(this.ace.atk * atkBoost);
+    this.ace.maxHp = Math.floor(this.ace.maxHp * hpBoost);
+    this.ace.hp = this.ace.maxHp; // Full heal on evolution
+    this.ace.speed = Math.floor(this.ace.speed * spdBoost);
+    this.ace.attackCooldown = Math.max(200, Math.floor(this.ace.attackCooldown * (1 / spdBoost)));
+
+    // Scale up sprite
+    this.ace.sprite.setScale(stage.scale);
+
+    // Evolution flash effect
+    this.cameras.main.flash(500, 255, 0, 255);
+    this.cameras.main.shake(300, 0.01);
+
+    // Particle burst
+    this.spawnDeathParticles(this.ace.sprite.x, this.ace.sprite.y, true);
+
+    // Show evolution text
+    const txt = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `★ ${stage.name} ★`, {
+        fontFamily: "monospace",
+        fontSize: "22px",
+        color: "#ff00ff",
+        stroke: "#000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(300)
+      .setScrollFactor(0);
+
+    this.tweens.add({
+      targets: txt,
+      y: txt.y - 50,
+      alpha: 0,
+      duration: 2500,
+      ease: "Cubic.easeOut",
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  private evolveCompanion(companion: CompanionData): void {
+    const chain = EVOLUTION_CHAINS[companion.sprite.texture.key.replace("pmd-", "")];
+    const currentStage = this.companionEvoStages.get(companion.sprite.texture.key) ?? 0;
+    if (!chain || currentStage >= chain.length - 1) return;
+
+    const nextStage = currentStage + 1;
+    this.companionEvoStages.set(companion.sprite.texture.key, nextStage);
+
+    const stage = chain[nextStage];
+    const prevStage = chain[currentStage];
+    companion.atk = Math.floor(companion.atk * (stage.atkMult / prevStage.atkMult));
+    companion.sprite.setScale(stage.scale);
+
+    this.spawnDeathParticles(companion.sprite.x, companion.sprite.y, false);
   }
 
   // ================================================================
@@ -1982,6 +2100,19 @@ export class GameScene extends Phaser.Scene {
     // Generate 3 choices
     type Choice = { label: string; desc: string; action: () => void; color: number; portrait?: string };
     const choices: Choice[] = [];
+
+    // Choice 0: Evolution (at level 5, 10, etc.)
+    const evoChain = EVOLUTION_CHAINS[this.ace.pokemonKey];
+    if (evoChain && this.aceEvoStage < evoChain.length - 1 && this.level >= (this.aceEvoStage + 1) * 5) {
+      const nextStage = evoChain[this.aceEvoStage + 1];
+      choices.push({
+        label: `EVOLVE → ${nextStage.name}`,
+        desc: `ATK×${nextStage.atkMult} HP×${nextStage.hpMult} SPD×${nextStage.speedMult}`,
+        color: 0xff00ff,
+        portrait: this.ace.pokemonKey,
+        action: () => this.evolveAce(),
+      });
+    }
 
     // Choice A: New companion (if slots available)
     if (this.companions.length < 5) {
