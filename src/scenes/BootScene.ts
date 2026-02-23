@@ -1,9 +1,13 @@
 import Phaser from "phaser";
 import { COLORS } from "../config";
+import {
+  loadPmdSprites,
+  loadPmdPortraits,
+  createPmdAnimations,
+} from "../sprites/PmdSpriteLoader";
 
 /**
- * BootScene — Generate placeholder graphics & load assets.
- * Real PMD sprites will replace these later.
+ * BootScene — Generate placeholder graphics & load PMD sprites.
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -12,9 +16,36 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     this.createPlaceholderSprites();
+
+    // Configure loader: don't block game on failed sprite loads
+    this.load.maxParallelDownloads = 4;
+    this.load.on("loaderror", (file: Phaser.Loader.File) => {
+      console.warn(`[BootScene] Failed to load: ${file.key} — using placeholder`);
+    });
+
+    // Load PMD sprites from SpriteCollab (async, may fail on network issues)
+    loadPmdSprites(this);
+    loadPmdPortraits(this);
+
+    // Show loading progress
+    const loadTxt = this.add.text(195, 422, "Loading sprites...", {
+      fontFamily: "monospace",
+      fontSize: "14px",
+      color: "#667eea",
+    }).setOrigin(0.5);
+
+    this.load.on("progress", (value: number) => {
+      loadTxt.setText(`Loading... ${Math.floor(value * 100)}%`);
+    });
+
+    this.load.on("complete", () => {
+      loadTxt.destroy();
+    });
   }
 
   create(): void {
+    // Create PMD walk animations
+    createPmdAnimations(this);
     this.scene.start("GameScene");
   }
 

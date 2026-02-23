@@ -9,6 +9,10 @@ import {
   XP_LEVEL_SCALE,
   COLORS,
 } from "../config";
+import {
+  POKEMON_SPRITES,
+  getDirectionFromVelocity,
+} from "../sprites/PmdSpriteLoader";
 
 /* ================================================================
    GameScene — Core prototype
@@ -19,6 +23,7 @@ import {
 
 interface AceData {
   sprite: Phaser.Physics.Arcade.Sprite;
+  pokemonKey: string;
   hp: number;
   maxHp: number;
   atk: number;
@@ -30,6 +35,7 @@ interface AceData {
 
 interface EnemyData {
   sprite: Phaser.Physics.Arcade.Sprite;
+  pokemonKey: string;
   hp: number;
   maxHp: number;
   atk: number;
@@ -202,18 +208,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createAce(): void {
+    // Use PMD sprite if available, fallback to placeholder
+    const aceKey = "pikachu";
+    const texKey = `pmd-${aceKey}`;
+    const usePmd = this.textures.exists(texKey);
     const sprite = this.physics.add.sprite(
       GAME_WIDTH / 2,
       GAME_HEIGHT / 2,
-      "ace",
+      usePmd ? texKey : "ace",
     );
     sprite.setDepth(10);
     sprite.setCollideWorldBounds(false);
+
+    if (usePmd) {
+      sprite.play(`${aceKey}-walk-down`);
+      // Scale sprite for better visibility
+      sprite.setScale(1.5);
+    }
 
     // Scale ace stats with cycle number
     const cycleMult = 1 + (this.cycleNumber - 1) * 0.15;
     this.ace = {
       sprite,
+      pokemonKey: aceKey,
       hp: Math.floor(100 * cycleMult),
       maxHp: Math.floor(100 * cycleMult),
       atk: Math.floor(10 * cycleMult),
@@ -467,15 +484,22 @@ export class GameScene extends Phaser.Scene {
 
     this.ace.sprite.setVelocity(vx, vy);
 
-    // Keep ace roughly centered, move world offset instead
-    // For prototype: just move the sprite and let camera follow
-    // Ace stays within a box around center
+    // Update walk animation direction for PMD sprites
+    if (this.textures.exists(`pmd-${this.ace.pokemonKey}`)) {
+      if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
+        const dir = getDirectionFromVelocity(vx, vy);
+        const animKey = `${this.ace.pokemonKey}-walk-${dir}`;
+        if (this.ace.sprite.anims.currentAnim?.key !== animKey) {
+          this.ace.sprite.play(animKey);
+        }
+      }
+    }
+
+    // Soft boundary — wrap enemies around player
     const cx = GAME_WIDTH / 2;
     const cy = GAME_HEIGHT / 2;
     const ax = this.ace.sprite.x;
     const ay = this.ace.sprite.y;
-
-    // Soft boundary — wrap enemies around player
     if (ax < -200 || ax > GAME_WIDTH + 200 || ay < -200 || ay > GAME_HEIGHT + 200) {
       this.ace.sprite.setPosition(cx, cy);
     }
@@ -517,6 +541,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Enemy pokemon pool per tier */
+  private static readonly ENEMY_POOL: string[][] = [
+    ["rattata", "zubat"],      // Tier 0: early
+    ["geodude", "gastly"],     // Tier 1: mid
+    ["pinsir"],                // Tier 2: elite
+  ];
+
   private spawnEnemy(elapsed: number): void {
     if (this.enemies.length >= MAX_ENEMIES) return;
 
@@ -528,18 +559,31 @@ export class GameScene extends Phaser.Scene {
 
     // Scale with time + cycle number
     const tier = elapsed < 60 ? 0 : elapsed < 150 ? 1 : 2;
-    const texKey = tier >= 2 ? "enemy-elite" : "enemy";
     const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
     const hpMult = (1 + tier * 0.8 + elapsed * 0.01) * cycleMult;
     const spdMult = (1 + tier * 0.2) * Math.min(cycleMult, 1.5);
 
-    const sprite = this.physics.add.sprite(ex, ey, texKey).setDepth(5);
+    // Pick enemy pokemon based on tier
+    const pool = GameScene.ENEMY_POOL[tier] ?? GameScene.ENEMY_POOL[0];
+    const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
+    const pmdTexKey = `pmd-${pokemonKey}`;
+    const usePmd = this.textures.exists(pmdTexKey);
+    const fallbackTex = tier >= 2 ? "enemy-elite" : "enemy";
+
+    const sprite = this.physics.add.sprite(ex, ey, usePmd ? pmdTexKey : fallbackTex).setDepth(5);
     this.enemyGroup.add(sprite);
+
+    if (usePmd) {
+      sprite.play(`${pokemonKey}-walk-down`);
+      // Tint enemies slightly red so they're distinguishable from allies
+      sprite.setTint(0xff8888);
+    }
 
     const hpBarGfx = this.add.graphics().setDepth(6);
 
     const enemy: EnemyData = {
       sprite,
+      pokemonKey,
       hp: Math.round(15 * hpMult),
       maxHp: Math.round(15 * hpMult),
       atk: Math.round((5 + tier * 3 + elapsed * 0.02) * cycleMult),
@@ -814,18 +858,30 @@ export class GameScene extends Phaser.Scene {
   // COMPANIONS
   // ================================================================
 
+  /** Companion pokemon pool: key → attack type */
+  private static readonly COMPANION_POOL: { key: string; type: "projectile" | "orbital" | "area" }[] = [
+    { key: "squirtle", type: "projectile" },
+    { key: "gastly", type: "orbital" },
+    { key: "geodude", type: "area" },
+  ];
+
   private addCompanion(): void {
     if (this.companions.length >= 3) return;
 
-    const types: Array<"projectile" | "orbital" | "area"> = [
-      "projectile",
-      "orbital",
-      "area",
-    ];
-    const type = types[this.companions.length % 3];
+    const pool = GameScene.COMPANION_POOL[this.companions.length % 3];
+    const type = pool.type;
+    const pokemonKey = pool.key;
+    const pmdTexKey = `pmd-${pokemonKey}`;
+    const usePmd = this.textures.exists(pmdTexKey);
+
     const sprite = this.physics.add
-      .sprite(this.ace.sprite.x, this.ace.sprite.y - 30, "companion")
+      .sprite(this.ace.sprite.x, this.ace.sprite.y - 30, usePmd ? pmdTexKey : "companion")
       .setDepth(9);
+
+    if (usePmd) {
+      sprite.play(`${pokemonKey}-walk-down`);
+      sprite.setScale(1.2);
+    }
 
     const companion: CompanionData = {
       sprite,
@@ -841,7 +897,9 @@ export class GameScene extends Phaser.Scene {
     this.companions.push(companion);
 
     // Announce
-    const names = ["Squirtle", "Gastly", "Geodude"];
+    const names = POKEMON_SPRITES[pokemonKey]?.name
+      ? [POKEMON_SPRITES.squirtle.name, POKEMON_SPRITES.gastly.name, POKEMON_SPRITES.geodude.name]
+      : ["Squirtle", "Gastly", "Geodude"];
     const txt = this.add
       .text(
         GAME_WIDTH / 2,
@@ -1214,14 +1272,24 @@ export class GameScene extends Phaser.Scene {
     const by = this.ace.sprite.y + Math.sin(angle) * dist;
 
     const bossHp = 200 + this.cycleNumber * 80;
+    const bossKey = "pinsir";
+    const pmdTexKey = `pmd-${bossKey}`;
+    const usePmd = this.textures.exists(pmdTexKey);
 
-    const sprite = this.physics.add.sprite(bx, by, "boss").setDepth(12);
+    const sprite = this.physics.add.sprite(bx, by, usePmd ? pmdTexKey : "boss").setDepth(12);
     this.enemyGroup.add(sprite);
+
+    if (usePmd) {
+      sprite.play(`${bossKey}-walk-down`);
+      sprite.setScale(2.0);
+    }
 
     const hpBarGfx = this.add.graphics().setDepth(13);
 
+    const bossName = POKEMON_SPRITES[bossKey]?.name ?? "Boss";
     this.boss = {
       sprite,
+      pokemonKey: bossKey,
       hp: bossHp,
       maxHp: bossHp,
       atk: 12 + this.cycleNumber * 3,
@@ -1230,7 +1298,7 @@ export class GameScene extends Phaser.Scene {
     };
     this.enemies.push(this.boss);
 
-    this.bossNameText.setText(`BOSS — Cycle ${this.cycleNumber}`).setVisible(true);
+    this.bossNameText.setText(`${bossName} — Cycle ${this.cycleNumber}`).setVisible(true);
 
     this.showWarning("BOSS!");
   }
