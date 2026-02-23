@@ -267,6 +267,9 @@ export class GameScene extends Phaser.Scene {
   private pauseContainer!: Phaser.GameObjects.Container;
   private manualPause = false;
 
+  // -- Danger vignette --
+  private dangerVignette!: Phaser.GameObjects.Graphics;
+
   // -- Achievements --
   private saveData: SaveData = loadSaveData();
   private achievementQueue: Achievement[] = [];
@@ -301,7 +304,11 @@ export class GameScene extends Phaser.Scene {
     this.createJoystick();
     this.createPhysicsGroups();
     this.setupCollisions();
+    this.createDangerVignette();
     sfx.startBgm();
+
+    // Fade in from black
+    this.cameras.main.fadeIn(500, 0, 0, 0);
   }
 
   // ================================================================
@@ -621,6 +628,31 @@ export class GameScene extends Phaser.Scene {
     this.pauseContainer.removeAll(true);
   }
 
+  private createDangerVignette(): void {
+    // Red vignette overlay that appears when HP is low
+    this.dangerVignette = this.add.graphics().setDepth(95).setScrollFactor(0);
+    this.dangerVignette.setAlpha(0);
+  }
+
+  private updateDangerVignette(): void {
+    const hpRatio = this.ace.hp / this.ace.maxHp;
+    if (hpRatio < 0.3) {
+      // Pulsing red vignette
+      const pulse = Math.sin(this.time.now * 0.005) * 0.15 + 0.2;
+      const intensity = (1 - hpRatio / 0.3) * pulse;
+      this.dangerVignette.clear();
+      this.dangerVignette.fillStyle(0xff0000, intensity);
+      // Draw border rectangles (top, bottom, left, right)
+      this.dangerVignette.fillRect(0, 0, GAME_WIDTH, 40);
+      this.dangerVignette.fillRect(0, GAME_HEIGHT - 40, GAME_WIDTH, 40);
+      this.dangerVignette.fillRect(0, 0, 30, GAME_HEIGHT);
+      this.dangerVignette.fillRect(GAME_WIDTH - 30, 0, 30, GAME_HEIGHT);
+      this.dangerVignette.setAlpha(1);
+    } else {
+      this.dangerVignette.clear();
+    }
+  }
+
   private createJoystick(): void {
     const jx = 80;
     const jy = GAME_HEIGHT - 100;
@@ -732,6 +764,7 @@ export class GameScene extends Phaser.Scene {
     this.updateItems(dt);
     this.updateKillStreak();
     this.checkAchievements();
+    this.updateDangerVignette();
     this.drawUI();
   }
 
