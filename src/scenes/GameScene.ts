@@ -59,6 +59,18 @@ interface XpGem {
   value: number;
 }
 
+interface LegionData {
+  ace: string;
+  companions: string[];
+  dps: number;
+  color: number;
+}
+
+interface CyclePassData {
+  cycleNumber?: number;
+  legions?: LegionData[];
+}
+
 // =================================================================
 
 export class GameScene extends Phaser.Scene {
@@ -80,6 +92,21 @@ export class GameScene extends Phaser.Scene {
   private joyPointer: Phaser.Input.Pointer | null = null;
   private joyVector = new Phaser.Math.Vector2(0, 0);
 
+  // -- Boss --
+  private boss: EnemyData | null = null;
+  private bossHpBar!: Phaser.GameObjects.Graphics;
+  private bossNameText!: Phaser.GameObjects.Text;
+  private bossSpawned = false;
+  private bossWarningShown = false;
+
+  // -- Cycle / Legion --
+  private cycleNumber = 1;
+  private legions: LegionData[] = [];
+
+  // -- Level-up selection --
+  private levelUpContainer!: Phaser.GameObjects.Container;
+  private pendingLevelUp = false;
+
   // -- Game state --
   private xp = 0;
   private level = 1;
@@ -95,6 +122,7 @@ export class GameScene extends Phaser.Scene {
   private timerText!: Phaser.GameObjects.Text;
   private killText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
+  private cycleText!: Phaser.GameObjects.Text;
 
   // -- World camera offset (infinite map illusion) --
   private worldOffset = new Phaser.Math.Vector2(0, 0);
@@ -105,6 +133,11 @@ export class GameScene extends Phaser.Scene {
 
   constructor() {
     super({ key: "GameScene" });
+  }
+
+  init(data?: CyclePassData): void {
+    if (data?.cycleNumber) this.cycleNumber = data.cycleNumber;
+    if (data?.legions) this.legions = [...data.legions];
   }
 
   create(): void {
@@ -133,7 +166,12 @@ export class GameScene extends Phaser.Scene {
     this.cycleTimer = CYCLE_DURATION_SEC;
     this.spawnTimer = 0;
     this.isPaused = false;
+    this.pendingLevelUp = false;
+    this.boss = null;
+    this.bossSpawned = false;
+    this.bossWarningShown = false;
     this.worldOffset.set(0, 0);
+    // Note: cycleNumber and legions are preserved via init()
   }
 
   private createStarfield(): void {
@@ -158,14 +196,16 @@ export class GameScene extends Phaser.Scene {
     sprite.setDepth(10);
     sprite.setCollideWorldBounds(false);
 
+    // Scale ace stats with cycle number
+    const cycleMult = 1 + (this.cycleNumber - 1) * 0.15;
     this.ace = {
       sprite,
-      hp: 100,
-      maxHp: 100,
-      atk: 10,
-      speed: 160,
-      attackRange: 120,
-      attackCooldown: 800,
+      hp: Math.floor(100 * cycleMult),
+      maxHp: Math.floor(100 * cycleMult),
+      atk: Math.floor(10 * cycleMult),
+      speed: 160 + (this.cycleNumber - 1) * 5,
+      attackRange: 120 + (this.cycleNumber - 1) * 5,
+      attackCooldown: Math.max(400, 800 - (this.cycleNumber - 1) * 30),
       lastAttackTime: 0,
     };
   }
@@ -209,6 +249,33 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(100)
       .setScrollFactor(0);
+
+    // Cycle info (top right)
+    this.cycleText = this.add
+      .text(GAME_WIDTH - 8, 8, `Cycle ${this.cycleNumber}`, {
+        fontFamily: "monospace",
+        fontSize: "12px",
+        color: "#fbbf24",
+      })
+      .setOrigin(1, 0)
+      .setDepth(100)
+      .setScrollFactor(0);
+
+    // Boss HP bar (hidden until boss spawns)
+    this.bossHpBar = this.add.graphics().setDepth(100).setScrollFactor(0).setVisible(false);
+    this.bossNameText = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 40, "", {
+        fontFamily: "monospace",
+        fontSize: "12px",
+        color: "#ff00ff",
+      })
+      .setOrigin(0.5)
+      .setDepth(100)
+      .setScrollFactor(0)
+      .setVisible(false);
+
+    // Level-up selection container (hidden)
+    this.levelUpContainer = this.add.container(0, 0).setDepth(500).setScrollFactor(0).setVisible(false);
   }
 
   private createJoystick(): void {
@@ -326,15 +393,31 @@ export class GameScene extends Phaser.Scene {
 
   private updateTimer(dt: number): void {
     this.cycleTimer -= dt;
-    if (this.cycleTimer <= 0) {
-      this.cycleTimer = 0;
-      // Time's up — for now, just restart
-      // TODO: boss check, cycle transition
+    if (this.cycleTimer <= 0) this.cycleTimer = 0;
+
+    const elapsed = CYCLE_DURATION_SEC - this.cycleTimer;
+
+    // Boss warning at 3:00 (180s elapsed)
+    if (elapsed >= 180 && !this.bossWarningShown) {
+      this.bossWarningShown = true;
+      this.showWarning("WARNING!");
+    }
+
+    // Boss spawn at 4:00 (240s elapsed)
+    if (elapsed >= 240 && !this.bossSpawned) {
+      this.bossSpawned = true;
+      this.spawnBoss();
+    }
+
+    // Time's up without killing boss
+    if (this.cycleTimer <= 0 && this.boss) {
+      this.onAceDeath();
     }
 
     const min = Math.floor(this.cycleTimer / 60);
     const sec = Math.floor(this.cycleTimer % 60);
-    this.timerText.setText(`${min}:${sec.toString().padStart(2, "0")}`);
+    const color = this.cycleTimer <= 60 ? "#f43f5e" : "#e0e0e0";
+    this.timerText.setText(`${min}:${sec.toString().padStart(2, "0")}`).setColor(color);
   }
 
   // ================================================================
@@ -406,11 +489,12 @@ export class GameScene extends Phaser.Scene {
     const ex = this.ace.sprite.x + Math.cos(angle) * dist;
     const ey = this.ace.sprite.y + Math.sin(angle) * dist;
 
-    // Scale with time
+    // Scale with time + cycle number
     const tier = elapsed < 60 ? 0 : elapsed < 150 ? 1 : 2;
     const texKey = tier >= 2 ? "enemy-elite" : "enemy";
-    const hpMult = 1 + tier * 0.8 + elapsed * 0.01;
-    const spdMult = 1 + tier * 0.2;
+    const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
+    const hpMult = (1 + tier * 0.8 + elapsed * 0.01) * cycleMult;
+    const spdMult = (1 + tier * 0.2) * Math.min(cycleMult, 1.5);
 
     const sprite = this.physics.add.sprite(ex, ey, texKey).setDepth(5);
     this.enemyGroup.add(sprite);
@@ -421,7 +505,7 @@ export class GameScene extends Phaser.Scene {
       sprite,
       hp: Math.round(15 * hpMult),
       maxHp: Math.round(15 * hpMult),
-      atk: Math.round(5 + tier * 3 + elapsed * 0.02),
+      atk: Math.round((5 + tier * 3 + elapsed * 0.02) * cycleMult),
       speed: (40 + Math.random() * 30) * spdMult,
       hpBar: hpBarGfx,
     };
@@ -601,12 +685,23 @@ export class GameScene extends Phaser.Scene {
   private onEnemyDeath(enemy: EnemyData): void {
     this.kills++;
 
-    // Spawn XP gem
-    this.spawnXpGem(enemy.sprite.x, enemy.sprite.y, 3 + Math.floor(enemy.maxHp / 10));
+    // Check if this was the boss
+    const wasBoss = enemy === this.boss;
+
+    // Spawn XP gem (boss drops more)
+    const xpValue = wasBoss
+      ? 50 + this.cycleNumber * 20
+      : 3 + Math.floor(enemy.maxHp / 10);
+    this.spawnXpGem(enemy.sprite.x, enemy.sprite.y, xpValue);
 
     // Cleanup
     const idx = this.enemies.indexOf(enemy);
     if (idx >= 0) this.cleanupEnemy(idx);
+
+    // Trigger boss defeated sequence
+    if (wasBoss) {
+      this.onBossDefeated();
+    }
   }
 
   // ================================================================
@@ -670,54 +765,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onLevelUp(): void {
-    // Flash screen
-    const flash = this.add.rectangle(
-      GAME_WIDTH / 2,
-      GAME_HEIGHT / 2,
-      GAME_WIDTH,
-      GAME_HEIGHT,
-      0xffffff,
-      0.15,
-    ).setDepth(200).setScrollFactor(0);
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 400,
-      onComplete: () => flash.destroy(),
-    });
+    // Always grant small passive stat boost
+    this.ace.attackRange += 3;
+    if (this.ace.attackCooldown > 350) this.ace.attackCooldown -= 15;
 
-    // Show level up text
-    const txt = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, `LEVEL ${this.level}!`, {
-        fontFamily: "monospace",
-        fontSize: "24px",
-        color: "#fbbf24",
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(201)
-      .setScrollFactor(0);
-
-    this.tweens.add({
-      targets: txt,
-      y: txt.y - 40,
-      alpha: 0,
-      duration: 1000,
-      onComplete: () => txt.destroy(),
-    });
-
-    // Boost ace stats
-    this.ace.atk += 2;
-    this.ace.maxHp += 10;
-    this.ace.hp = Math.min(this.ace.hp + 20, this.ace.maxHp);
-    this.ace.attackRange += 5;
-    if (this.ace.attackCooldown > 300) this.ace.attackCooldown -= 30;
-
-    // Auto-add companion at certain levels
-    if (this.level === 2 || this.level === 4 || this.level === 6) {
-      this.addCompanion();
-    }
+    // Show selection UI for meaningful choices
+    this.showLevelUpSelection();
   }
 
   // ================================================================
@@ -936,7 +989,8 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.once("pointerdown", () => {
-      this.scene.restart();
+      // Reset to cycle 1 on death, but keep legions for show
+      this.scene.restart({ cycleNumber: 1, legions: [] });
     });
   }
 
@@ -978,8 +1032,388 @@ export class GameScene extends Phaser.Scene {
     this.xpBar.fillStyle(COLORS.xpBlue, 1);
     this.xpBar.fillRect(xpX, xpY, xpW * (this.xp / this.xpToNext), xpH);
 
+    // Boss HP bar
+    if (this.boss) {
+      this.bossHpBar.setVisible(true);
+      this.bossNameText.setVisible(true);
+      this.bossHpBar.clear();
+      const bw = GAME_WIDTH - 40;
+      const bx = 20;
+      const by = GAME_HEIGHT - 55;
+      this.bossHpBar.fillStyle(0x333333, 0.8);
+      this.bossHpBar.fillRect(bx, by, bw, 10);
+      this.bossHpBar.fillStyle(0xff00ff, 1);
+      this.bossHpBar.fillRect(bx, by, bw * (this.boss.hp / this.boss.maxHp), 10);
+      this.bossHpBar.lineStyle(1, 0x888888, 0.8);
+      this.bossHpBar.strokeRect(bx, by, bw, 10);
+    } else {
+      this.bossHpBar.setVisible(false);
+      this.bossNameText.setVisible(false);
+    }
+
     // Update texts
     this.killText.setText(`Kill: ${this.kills}`);
     this.levelText.setText(`Lv.${this.level}`);
+    const legionInfo = this.legions.length > 0 ? ` [${this.legions.length}]` : "";
+    this.cycleText.setText(`Cycle ${this.cycleNumber}${legionInfo}`);
+  }
+
+  // ================================================================
+  // BOSS
+  // ================================================================
+
+  private showWarning(text: string): void {
+    const warn = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, text, {
+        fontFamily: "monospace",
+        fontSize: "32px",
+        color: "#f43f5e",
+        stroke: "#000",
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(300)
+      .setScrollFactor(0)
+      .setAlpha(0);
+
+    this.tweens.add({
+      targets: warn,
+      alpha: 1,
+      duration: 300,
+      yoyo: true,
+      repeat: 2,
+      onComplete: () => warn.destroy(),
+    });
+
+    // Screen flash red
+    const flash = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.1)
+      .setDepth(200)
+      .setScrollFactor(0);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 600,
+      repeat: 2,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private spawnBoss(): void {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 250;
+    const bx = this.ace.sprite.x + Math.cos(angle) * dist;
+    const by = this.ace.sprite.y + Math.sin(angle) * dist;
+
+    const bossHp = 200 + this.cycleNumber * 80;
+
+    const sprite = this.physics.add.sprite(bx, by, "boss").setDepth(12);
+    this.enemyGroup.add(sprite);
+
+    const hpBarGfx = this.add.graphics().setDepth(13);
+
+    this.boss = {
+      sprite,
+      hp: bossHp,
+      maxHp: bossHp,
+      atk: 12 + this.cycleNumber * 3,
+      speed: 30,
+      hpBar: hpBarGfx,
+    };
+    this.enemies.push(this.boss);
+
+    this.bossNameText.setText(`BOSS — Cycle ${this.cycleNumber}`).setVisible(true);
+
+    this.showWarning("BOSS!");
+  }
+
+  private onBossDefeated(): void {
+    this.boss = null;
+    this.isPaused = true;
+
+    // Victory flash
+    const flash = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfbbf24, 0.2)
+      .setDepth(200)
+      .setScrollFactor(0);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 1000,
+      onComplete: () => flash.destroy(),
+    });
+
+    // Show cycle clear screen
+    this.time.delayedCall(800, () => this.showCycleClear());
+  }
+
+  // ================================================================
+  // CYCLE TRANSITION
+  // ================================================================
+
+  private showCycleClear(): void {
+    const overlay = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.85)
+      .setDepth(400)
+      .setScrollFactor(0);
+
+    const title = this.add
+      .text(GAME_WIDTH / 2, 80, "STAGE CLEAR!", {
+        fontFamily: "monospace",
+        fontSize: "24px",
+        color: "#fbbf24",
+        stroke: "#000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(401)
+      .setScrollFactor(0);
+
+    const stats = [
+      `Cycle ${this.cycleNumber}`,
+      `Lv.${this.level}  Kill: ${this.kills}`,
+      `Time: ${this.formatTime(CYCLE_DURATION_SEC - this.cycleTimer)}`,
+      `Legions: ${this.legions.length}`,
+    ].join("\n");
+
+    this.add
+      .text(GAME_WIDTH / 2, 140, stats, {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: "#ccc",
+        align: "center",
+        lineSpacing: 6,
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(401)
+      .setScrollFactor(0);
+
+    // "Legion Formed!" section
+    const legionColor = [0xffd700, 0x00ddff, 0xff4444][this.cycleNumber % 3];
+    this.add
+      .text(GAME_WIDTH / 2, 260, "— LEGION FORMED —", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#667eea",
+      })
+      .setOrigin(0.5)
+      .setDepth(401)
+      .setScrollFactor(0);
+
+    const companionNames = this.companions.map((_, i) => ["Squirtle", "Gastly", "Geodude"][i] ?? "???");
+    this.add
+      .text(GAME_WIDTH / 2, 290, `Ace + ${companionNames.join(", ")}`, {
+        fontFamily: "monospace",
+        fontSize: "12px",
+        color: "#aaa",
+      })
+      .setOrigin(0.5)
+      .setDepth(401)
+      .setScrollFactor(0);
+
+    // Store legion
+    this.legions.push({
+      ace: `Ace_${this.cycleNumber}`,
+      companions: companionNames,
+      dps: this.ace.atk + this.companions.reduce((sum, c) => sum + c.atk, 0),
+      color: legionColor,
+    });
+
+    // "Next Cycle" button
+    const btnBg = this.add
+      .rectangle(GAME_WIDTH / 2, 400, 200, 50, 0x667eea, 0.9)
+      .setDepth(401)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+
+    const btnText = this.add
+      .text(GAME_WIDTH / 2, 400, "NEXT CYCLE →", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#fff",
+      })
+      .setOrigin(0.5)
+      .setDepth(402)
+      .setScrollFactor(0);
+
+    this.tweens.add({
+      targets: [btnBg, btnText],
+      alpha: 0.5,
+      yoyo: true,
+      repeat: -1,
+      duration: 800,
+    });
+
+    btnBg.on("pointerdown", () => {
+      this.startNextCycle();
+    });
+
+    // Also allow tap anywhere after 2 seconds
+    this.time.delayedCall(2000, () => {
+      this.input.once("pointerdown", () => {
+        this.startNextCycle();
+      });
+    });
+  }
+
+  private startNextCycle(): void {
+    const nextCycle = this.cycleNumber + 1;
+    const savedLegions = [...this.legions];
+
+    // Clean up all game objects
+    for (const e of this.enemies) {
+      e.sprite.destroy();
+      e.hpBar.destroy();
+    }
+    for (const p of this.projectiles) p.sprite.destroy();
+    for (const g of this.xpGems) g.sprite.destroy();
+    for (const c of this.companions) c.sprite.destroy();
+    this.ace.sprite.destroy();
+
+    // Restart scene with persistent data
+    this.scene.restart({ cycleNumber: nextCycle, legions: savedLegions });
+  }
+
+  // ================================================================
+  // LEVEL-UP SELECTION UI
+  // ================================================================
+
+  private showLevelUpSelection(): void {
+    this.isPaused = true;
+    this.pendingLevelUp = true;
+    this.levelUpContainer.removeAll(true);
+    this.levelUpContainer.setVisible(true);
+
+    // Dim overlay
+    const overlay = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7)
+      .setScrollFactor(0);
+    this.levelUpContainer.add(overlay);
+
+    // Title
+    const title = this.add
+      .text(GAME_WIDTH / 2, 60, `LEVEL ${this.level}!`, {
+        fontFamily: "monospace",
+        fontSize: "22px",
+        color: "#fbbf24",
+        stroke: "#000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0);
+    this.levelUpContainer.add(title);
+
+    // Generate 3 choices
+    type Choice = { label: string; desc: string; action: () => void; color: number };
+    const choices: Choice[] = [];
+
+    // Choice A: New companion (if slots available)
+    if (this.companions.length < 3) {
+      const types: Array<"projectile" | "orbital" | "area"> = ["projectile", "orbital", "area"];
+      const nextType = types[this.companions.length % 3];
+      const names: Record<string, string> = { projectile: "Squirtle", orbital: "Gastly", area: "Geodude" };
+      const descs: Record<string, string> = {
+        projectile: "Fires projectiles at enemies",
+        orbital: "Orbits around you, contact damage",
+        area: "Periodic area-of-effect damage",
+      };
+      choices.push({
+        label: `+ ${names[nextType]}`,
+        desc: descs[nextType],
+        color: 0x00ddff,
+        action: () => this.addCompanion(),
+      });
+    }
+
+    // Choice B: Boost ATK
+    choices.push({
+      label: "ATK +25%",
+      desc: `${this.ace.atk} → ${Math.floor(this.ace.atk * 1.25)}`,
+      color: 0xf43f5e,
+      action: () => {
+        this.ace.atk = Math.floor(this.ace.atk * 1.25);
+        this.companions.forEach((c) => (c.atk = Math.floor(c.atk * 1.15)));
+      },
+    });
+
+    // Choice C: Boost HP + heal
+    choices.push({
+      label: "MAX HP +30",
+      desc: `Heal to full (${this.ace.maxHp + 30} HP)`,
+      color: 0x3bc95e,
+      action: () => {
+        this.ace.maxHp += 30;
+        this.ace.hp = this.ace.maxHp;
+      },
+    });
+
+    // Choice D: Speed + Range (only if we have 3 options already)
+    if (choices.length < 3) {
+      choices.push({
+        label: "SPEED +20%",
+        desc: `Move faster, attack faster`,
+        color: 0xfbbf24,
+        action: () => {
+          this.ace.speed = Math.floor(this.ace.speed * 1.2);
+          this.ace.attackCooldown = Math.max(200, this.ace.attackCooldown - 80);
+        },
+      });
+    }
+
+    // Render choice cards
+    const startY = 140;
+    const cardH = 90;
+    const gap = 15;
+
+    choices.forEach((choice, i) => {
+      const cy = startY + i * (cardH + gap);
+
+      // Card background
+      const card = this.add
+        .rectangle(GAME_WIDTH / 2, cy + cardH / 2, GAME_WIDTH - 40, cardH, 0x111118, 0.95)
+        .setStrokeStyle(2, choice.color, 0.8)
+        .setScrollFactor(0)
+        .setInteractive({ useHandCursor: true });
+      this.levelUpContainer.add(card);
+
+      // Label
+      const lbl = this.add
+        .text(GAME_WIDTH / 2, cy + 25, choice.label, {
+          fontFamily: "monospace",
+          fontSize: "18px",
+          color: `#${choice.color.toString(16).padStart(6, "0")}`,
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0);
+      this.levelUpContainer.add(lbl);
+
+      // Description
+      const desc = this.add
+        .text(GAME_WIDTH / 2, cy + 55, choice.desc, {
+          fontFamily: "monospace",
+          fontSize: "11px",
+          color: "#888",
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0);
+      this.levelUpContainer.add(desc);
+
+      // Click handler
+      card.on("pointerdown", () => {
+        choice.action();
+        this.closeLevelUpSelection();
+      });
+
+      // Hover effect
+      card.on("pointerover", () => card.setFillStyle(0x1a1a25, 1));
+      card.on("pointerout", () => card.setFillStyle(0x111118, 0.95));
+    });
+  }
+
+  private closeLevelUpSelection(): void {
+    this.levelUpContainer.setVisible(false);
+    this.levelUpContainer.removeAll(true);
+    this.isPaused = false;
+    this.pendingLevelUp = false;
   }
 }
