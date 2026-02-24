@@ -12,11 +12,15 @@ import {
 import {
   POKEMON_SPRITES,
   getDirectionFromVelocity,
+  PMD_DIRECTIONS,
 } from "../sprites/PmdSpriteLoader";
 import { sfx, BGM_TRACKS } from "../audio/SfxManager";
 import {
   STARTER_ATTACK_TYPE,
   playHitEffect,
+  getRangeTextureKey,
+  getRangeAnimKey,
+  hasAttackVariant,
   type AttackType,
 } from "../effects/AttackEffects";
 
@@ -1571,22 +1575,24 @@ export class GameScene extends Phaser.Scene {
     damage: number,
   ): void {
     if (this.projectiles.length >= MAX_PROJECTILES) {
-      // Recycle oldest
       const old = this.projectiles.shift()!;
       old.sprite.destroy();
     }
 
-    // Use type-specific projectile sprite if available
+    // Determine attack type from starter pokemon
     const atkType: AttackType = STARTER_ATTACK_TYPE[this.starterKey] ?? "NORMAL";
-    const rangeAnimKey = `atk-${atkType}-range`;
-    const rangeFrameKey = `atk-${atkType}-range-0`;
-    const useEffect = this.textures.exists(rangeFrameKey) && this.anims.exists(rangeAnimKey);
+
+    // Use spritesheet-based range animation if available
+    const rangeTex = getRangeTextureKey(atkType);
+    const rangeAnim = getRangeAnimKey(atkType);
+    const useEffect = rangeTex !== null && rangeAnim !== null
+      && this.textures.exists(rangeTex) && this.anims.exists(rangeAnim);
 
     const sprite = this.physics.add
-      .sprite(fromX, fromY, useEffect ? rangeFrameKey : "projectile")
+      .sprite(fromX, fromY, useEffect ? rangeTex! : "projectile")
       .setDepth(8);
     if (useEffect) {
-      sprite.play(rangeAnimKey);
+      sprite.play(rangeAnim!);
       sprite.setScale(1.5);
     }
     this.projectileGroup.add(sprite);
@@ -1596,8 +1602,49 @@ export class GameScene extends Phaser.Scene {
     sprite.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
     sprite.setRotation(angle);
 
-    const pierce = 1 + this.aceEvoStage; // More pierce with evolution
+    const pierce = 1 + this.aceEvoStage;
     this.projectiles.push({ sprite, damage, pierce });
+
+    // Play attack pose animation on the ace pokemon
+    this.playAttackPose(this.ace.sprite, this.starterKey, angle);
+  }
+
+  /**
+   * Play the attack pose animation on a pokemon sprite, then return to walk anim.
+   * Uses the Attack-Anim.png spritesheet loaded from PMDCollab.
+   */
+  private playAttackPose(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    pokemonKey: string,
+    angle: number,
+  ): void {
+    const config = POKEMON_SPRITES[pokemonKey];
+    if (!config?.attack) return;
+
+    // Determine direction from angle
+    const dir = getDirectionFromVelocity(Math.cos(angle), Math.sin(angle));
+    const atkAnimKey = `${pokemonKey}-attack-${dir}`;
+    if (!this.anims.exists(atkAnimKey)) return;
+
+    // Temporarily switch texture to attack spritesheet
+    const atkTexKey = `pmd-${pokemonKey}-attack`;
+    if (!this.textures.exists(atkTexKey)) return;
+
+    // Save current walk anim key to restore later
+    const currentAnim = sprite.anims.currentAnim?.key;
+
+    sprite.setTexture(atkTexKey);
+    sprite.play(atkAnimKey);
+    sprite.once("animationcomplete", () => {
+      // Restore walk texture and animation
+      const walkTexKey = `pmd-${pokemonKey}`;
+      if (this.textures.exists(walkTexKey)) {
+        sprite.setTexture(walkTexKey);
+        if (currentAnim && this.anims.exists(currentAnim)) {
+          sprite.play(currentAnim);
+        }
+      }
+    });
   }
 
   private updateProjectiles(_dt: number): void {

@@ -3,7 +3,9 @@ import { COLORS } from "../config";
 import {
   loadPmdSprites,
   loadPmdPortraits,
+  loadPmdAttackSprites,
   createPmdAnimations,
+  createPmdAttackAnimations,
 } from "../sprites/PmdSpriteLoader";
 import {
   loadAttackEffects,
@@ -30,8 +32,9 @@ export class BootScene extends Phaser.Scene {
     // Load PMD sprites from SpriteCollab (async, may fail on network issues)
     loadPmdSprites(this);
     loadPmdPortraits(this);
+    loadPmdAttackSprites(this);
 
-    // Load attack effect sprites from pokemonAutoChess resources
+    // Load attack effect spritesheets from pokemonAutoChess resources
     loadAttackEffects(this);
 
     // Show loading progress
@@ -51,9 +54,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Create PMD walk animations
+    // Create PMD walk + attack pose animations
     createPmdAnimations(this);
-    // Create attack effect animations
+    createPmdAttackAnimations(this);
+    // Create attack effect animations (type-based projectiles, hits, melee)
     createAttackAnimations(this);
     this.scene.start("TitleScene");
   }

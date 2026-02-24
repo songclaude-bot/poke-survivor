@@ -33,8 +33,15 @@
 ### 공격 이펙트 스프라이트
 
 - **출처**: [pokemonAutoChess](https://github.com/keldaanCommunity/pokemonAutoChess) — `attacks{tps}/` 디렉토리
-- ELECTRIC, FIRE, WATER, NORMAL 타입의 range/hit 애니메이션 프레임 74장
+- 18개 타입의 range/hit/melee 애니메이션 — 51개 스프라이트시트로 패킹
+- 타입: BUG, DARK, DRAGON, ELECTRIC, FAIRY, FIGHTING, FIRE, FLYING, GHOST, GRASS, GROUND, ICE, NORMAL, POISON, PSYCHIC, ROCK, STEEL, WATER
 - 라이선스: GPL v3
+
+### 포켓몬 공격 포즈 스프라이트시트
+
+- **출처**: [PMD SpriteCollab](https://sprites.pmdcollab.org/) — Attack-Anim.png + AnimData.xml
+- 9종 포켓몬의 8방향 공격 애니메이션 (Pikachu, Charmander, Squirtle, Bulbasaur, Gastly, Geodude, Rattata, Zubat, Pinsir)
+- 라이선스: CC BY-NC 4.0
 
 ## 게임 데이터
 

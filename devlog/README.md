@@ -34,3 +34,4 @@
 | 25 | 2026-02-24 | [Enemy Variety + Mini-Bosses](25-enemy-variety.md) | 완료 |
 | 26 | 2026-02-24 | [Final Polish — v2.0.0 Complete](26-final-polish.md) | 완료 |
 | 27 | 2026-02-24 | [Real PMD Audio & Attack Effects](27-real-audio-effects.md) | 완료 |
+| 28 | 2026-02-24 | [Spritesheet Attack System](28-spritesheet-attack-system.md) | 완료 |
