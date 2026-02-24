@@ -1,3 +1,7 @@
+/**
+ * GameScene — main gameplay orchestrator.
+ * State lives here; logic is delegated to manager modules.
+ */
 import Phaser from "phaser";
 import {
   GAME_WIDTH,
@@ -6,28 +10,17 @@ import {
   WORLD_HEIGHT,
   CYCLE_DURATION_SEC,
   MAX_ENEMIES,
-  MAX_PROJECTILES,
   XP_PER_LEVEL_BASE,
-  XP_LEVEL_SCALE,
   COLORS,
 } from "../config";
 import {
   POKEMON_SPRITES,
   getDirectionFromVelocity,
-  PMD_DIRECTIONS,
   pacTexKey,
 } from "../sprites/PmdSpriteLoader";
 import { sfx, BGM_TRACKS } from "../audio/SfxManager";
 import {
-  STARTER_ATTACK_TYPE,
-  playHitEffect,
-  getRangeTextureKey,
-  getRangeAnimKey,
-  hasAttackVariant,
-  type AttackType,
-} from "../effects/AttackEffects";
-import {
-  SaveData,
+  type SaveData,
   loadSaveData,
   saveSaveData,
   checkStarterUnlocks,
@@ -35,245 +28,60 @@ import {
   STARTER_SKILLS,
 } from "../data/SaveData";
 
-/* ================================================================
-   GameScene — Core prototype
-   Implements: movement, joystick, enemies, auto-attack, XP, level-up
-   ================================================================ */
+import type {
+  AceData, EnemyData, ProjectileData, CompanionData,
+  XpGem, ItemDrop, LegionData, LegionEntity, CyclePassData,
+  Achievement, GameStats, EnemyProjectile,
+} from "../data/GameTypes";
+import {
+  EVOLUTION_CHAINS, ENEMY_POOL, BOSS_POOL, COMPANION_POOL, ACHIEVEMENTS,
+  getBehavior, getDungeonName, getDifficultyLabel, formatTime,
+  CYCLE_TILES,
+} from "../data/GameData";
 
-// -- Tiny data types ------------------------------------------
+// Managers
+import type { GameContext } from "../managers/GameContext";
+import {
+  drawHUD, updateDangerVignette, showWarning,
+  showDamagePopup, spawnDeathParticles,
+} from "../managers/UIManager";
+import {
+  updateEnemies, updateEnemyProjectiles, cleanupEnemy,
+  spawnEnemy, spawnFormationEnemy, spawnMiniBoss, spawnBoss,
+  spawnEncirclement, spawnDiagonalMarch, spawnRushSwarm,
+} from "../managers/EnemyManager";
+import {
+  addCompanion, updateCompanions, evolveCompanion, updateLegions,
+} from "../managers/CompanionManager";
+import {
+  updateAceAutoAttack, fireProjectile, updateProjectiles,
+  onProjectileHitEnemy, damageAce, onEnemyDeath,
+  updateXpGemMagnet, collectXpGem, updateItems,
+  updateSkillEffects, findNearestEnemy, updateKillStreak,
+  evolveAce,
+} from "../managers/CombatManager";
 
-interface AceData {
-  sprite: Phaser.Physics.Arcade.Sprite;
-  pokemonKey: string;
-  hp: number;
-  maxHp: number;
-  atk: number;
-  speed: number;
-  attackRange: number;
-  attackCooldown: number;
-  lastAttackTime: number;
-}
-
-type EnemyBehavior = "chase" | "circle" | "charge" | "swarm" | "ranged";
-
-interface EnemyData {
-  sprite: Phaser.Physics.Arcade.Sprite;
-  pokemonKey: string;
-  hp: number;
-  maxHp: number;
-  atk: number;
-  speed: number;
-  hpBar: Phaser.GameObjects.Graphics;
-  behavior: EnemyBehavior;
-  /** For circle behavior: orbit angle */
-  orbitAngle?: number;
-  /** For charge behavior: charge cooldown timer */
-  chargeTimer?: number;
-  /** For charge behavior: is currently charging */
-  isCharging?: boolean;
-  /** Elite enemy flag */
-  isElite?: boolean;
-  /** Mini-boss flag */
-  isMini?: boolean;
-  /** For ranged behavior: last ranged attack time */
-  lastRangedAttack?: number;
-}
-
-interface ProjectileData {
-  sprite: Phaser.Physics.Arcade.Sprite;
-  damage: number;
-  pierce: number;
-}
-
-interface CompanionData {
-  sprite: Phaser.Physics.Arcade.Sprite;
-  atk: number;
-  attackCooldown: number;
-  lastAttackTime: number;
-  attackRange: number;
-  orbitAngle: number;
-  type: "projectile" | "orbital" | "area";
-  level: number;
-}
-
-interface XpGem {
-  sprite: Phaser.Physics.Arcade.Sprite;
-  value: number;
-  magnetized?: boolean;
-}
-
-type ItemType = "heal" | "bomb" | "magnet";
-
-interface ItemDrop {
-  sprite: Phaser.Physics.Arcade.Sprite;
-  type: ItemType;
-  /** Remaining lifetime in ms before despawn */
-  ttl: number;
-}
-
-interface LegionData {
-  ace: string;
-  companions: string[];
-  dps: number;
-  color: number;
-}
-
-/** Runtime representation of a legion following the player */
-interface LegionEntity {
-  data: LegionData;
-  gfx: Phaser.GameObjects.Graphics;
-  orbitAngle: number;
-  orbitDist: number;
-  lastAttackTime: number;
-  attackInterval: number;
-  attackRange: number;
-}
-
-interface CyclePassData {
-  cycleNumber?: number;
-  legions?: LegionData[];
-  starterKey?: string;
-  totalTime?: number;
-}
-
-// -- Evolution data --
-interface EvolutionStage {
-  name: string;
-  spriteKey: string; // key in POKEMON_SPRITES (e.g. "raichu")
-  atkMult: number;
-  hpMult: number;
-  speedMult: number;
-  scale: number;
-}
-
-const EVOLUTION_CHAINS: Record<string, EvolutionStage[]> = {
-  // Gen 1 starters — full 3-stage
-  pikachu: [
-    { name: "Pikachu", spriteKey: "pikachu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.5 },
-    { name: "Raichu ★", spriteKey: "raichu", atkMult: 1.5, hpMult: 1.3, speedMult: 1.15, scale: 1.5 },
-    { name: "Raichu GX ★★", spriteKey: "raichu", atkMult: 2.2, hpMult: 1.8, speedMult: 1.3, scale: 1.7 },
-  ],
-  charmander: [
-    { name: "Charmander", spriteKey: "charmander", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Charmeleon ★", spriteKey: "charmeleon", atkMult: 1.5, hpMult: 1.3, speedMult: 1.15, scale: 1.3 },
-    { name: "Charizard ★★", spriteKey: "charizard", atkMult: 2.2, hpMult: 1.7, speedMult: 1.3, scale: 1.5 },
-  ],
-  squirtle: [
-    { name: "Squirtle", spriteKey: "squirtle", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Wartortle ★", spriteKey: "wartortle", atkMult: 1.4, hpMult: 1.4, speedMult: 1.1, scale: 1.3 },
-    { name: "Blastoise ★★", spriteKey: "blastoise", atkMult: 2.0, hpMult: 2.0, speedMult: 1.2, scale: 1.5 },
-  ],
-  bulbasaur: [
-    { name: "Bulbasaur", spriteKey: "bulbasaur", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Ivysaur ★", spriteKey: "ivysaur", atkMult: 1.4, hpMult: 1.5, speedMult: 1.1, scale: 1.3 },
-    { name: "Venusaur ★★", spriteKey: "venusaur", atkMult: 1.9, hpMult: 2.2, speedMult: 1.2, scale: 1.5 },
-  ],
-  gastly: [
-    { name: "Gastly", spriteKey: "gastly", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Haunter ★", spriteKey: "haunter", atkMult: 1.7, hpMult: 1.2, speedMult: 1.2, scale: 1.3 },
-    { name: "Gengar ★★", spriteKey: "gengar", atkMult: 2.5, hpMult: 1.5, speedMult: 1.4, scale: 1.5 },
-  ],
-  geodude: [
-    { name: "Geodude", spriteKey: "geodude", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Graveler ★", spriteKey: "graveler", atkMult: 1.4, hpMult: 1.6, speedMult: 1.0, scale: 1.3 },
-    { name: "Golem ★★", spriteKey: "golem", atkMult: 1.9, hpMult: 2.3, speedMult: 1.0, scale: 1.5 },
-  ],
-  // Gen 1 extra
-  eevee: [
-    { name: "Eevee", spriteKey: "eevee", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Jolteon ★", spriteKey: "jolteon", atkMult: 1.6, hpMult: 1.1, speedMult: 1.4, scale: 1.3 },
-    { name: "Flareon ★★", spriteKey: "flareon", atkMult: 2.3, hpMult: 1.4, speedMult: 1.2, scale: 1.4 },
-  ],
-  // Gen 2 starters
-  chikorita: [
-    { name: "Chikorita", spriteKey: "chikorita", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Bayleef ★", spriteKey: "bayleef", atkMult: 1.3, hpMult: 1.5, speedMult: 1.1, scale: 1.3 },
-    { name: "Meganium ★★", spriteKey: "meganium", atkMult: 1.7, hpMult: 2.3, speedMult: 1.2, scale: 1.5 },
-  ],
-  cyndaquil: [
-    { name: "Cyndaquil", spriteKey: "cyndaquil", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Quilava ★", spriteKey: "quilava", atkMult: 1.6, hpMult: 1.2, speedMult: 1.2, scale: 1.3 },
-    { name: "Typhlosion ★★", spriteKey: "typhlosion", atkMult: 2.4, hpMult: 1.6, speedMult: 1.3, scale: 1.5 },
-  ],
-  totodile: [
-    { name: "Totodile", spriteKey: "totodile", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Croconaw ★", spriteKey: "croconaw", atkMult: 1.5, hpMult: 1.4, speedMult: 1.1, scale: 1.3 },
-    { name: "Feraligatr ★★", spriteKey: "feraligatr", atkMult: 2.2, hpMult: 1.9, speedMult: 1.2, scale: 1.5 },
-  ],
-  // Gen 3 starters
-  treecko: [
-    { name: "Treecko", spriteKey: "treecko", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Grovyle ★", spriteKey: "grovyle", atkMult: 1.5, hpMult: 1.2, speedMult: 1.3, scale: 1.3 },
-    { name: "Sceptile ★★", spriteKey: "sceptile", atkMult: 2.2, hpMult: 1.5, speedMult: 1.5, scale: 1.5 },
-  ],
-  torchic: [
-    { name: "Torchic", spriteKey: "torchic", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Combusken ★", spriteKey: "combusken", atkMult: 1.6, hpMult: 1.3, speedMult: 1.2, scale: 1.3 },
-    { name: "Blaziken ★★", spriteKey: "blaziken", atkMult: 2.4, hpMult: 1.7, speedMult: 1.3, scale: 1.5 },
-  ],
-  mudkip: [
-    { name: "Mudkip", spriteKey: "mudkip", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Marshtomp ★", spriteKey: "marshtomp", atkMult: 1.4, hpMult: 1.5, speedMult: 1.1, scale: 1.3 },
-    { name: "Swampert ★★", spriteKey: "swampert", atkMult: 2.0, hpMult: 2.2, speedMult: 1.1, scale: 1.5 },
-  ],
-  // Gen 4
-  riolu: [
-    { name: "Riolu", spriteKey: "riolu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Lucario ★", spriteKey: "lucario", atkMult: 1.8, hpMult: 1.4, speedMult: 1.3, scale: 1.4 },
-  ],
-  // Easter egg
-  machop: [
-    { name: "Machop", spriteKey: "machop", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Machoke ★", spriteKey: "machoke", atkMult: 1.6, hpMult: 1.5, speedMult: 1.1, scale: 1.4 },
-    { name: "Machamp ★★", spriteKey: "machamp", atkMult: 2.5, hpMult: 2.0, speedMult: 1.2, scale: 1.6 },
-  ],
-};
-
-// =================================================================
-
-// -- Achievement definitions --
-interface Achievement {
-  id: string;
-  name: string;
-  desc: string;
-  check: (s: GameScene) => boolean;
-}
-
-const ACHIEVEMENTS: Achievement[] = [
-  { id: "first_kill", name: "First Blood", desc: "Defeat your first enemy", check: s => s.getKills() >= 1 },
-  { id: "kill_50", name: "Hunter", desc: "Defeat 50 enemies", check: s => s.getKills() >= 50 },
-  { id: "kill_200", name: "Slayer", desc: "Defeat 200 enemies", check: s => s.getKills() >= 200 },
-  { id: "kill_500", name: "Exterminator", desc: "Defeat 500 enemies", check: s => s.getKills() >= 500 },
-  { id: "wave_5", name: "Survivor", desc: "Reach Wave 5", check: s => s.getWave() >= 5 },
-  { id: "wave_10", name: "Veteran", desc: "Reach Wave 10", check: s => s.getWave() >= 10 },
-  { id: "wave_20", name: "Elite", desc: "Reach Wave 20", check: s => s.getWave() >= 20 },
-  { id: "level_5", name: "Growing", desc: "Reach Level 5", check: s => s.getLevel() >= 5 },
-  { id: "level_10", name: "Experienced", desc: "Reach Level 10", check: s => s.getLevel() >= 10 },
-  { id: "evolve", name: "Evolution!", desc: "Evolve your ace Pokemon", check: s => s.getEvoStage() >= 1 },
-  { id: "full_party", name: "Squad Goals", desc: "Have 5 companions", check: s => s.getPartySize() >= 6 },
-  { id: "cycle_2", name: "New Game+", desc: "Reach Cycle 2", check: s => s.getCycle() >= 2 },
-  { id: "streak_15", name: "Combo Master", desc: "Get a 15 kill streak", check: s => s.getStreak() >= 15 },
-];
-
-// SaveData is now imported from ../data/SaveData
+// ================================================================
+// SCENE
+// ================================================================
 
 export class GameScene extends Phaser.Scene {
-  // -- Core groups --
+  // -- Entity arrays --
   private ace!: AceData;
   private enemies: EnemyData[] = [];
   private projectiles: ProjectileData[] = [];
   private companions: CompanionData[] = [];
   private xpGems: XpGem[] = [];
   private items: ItemDrop[] = [];
-  private enemyProjectiles: { sprite: Phaser.GameObjects.Sprite; vx: number; vy: number; damage: number }[] = [];
+  private enemyProjectiles: EnemyProjectile[] = [];
 
-  // -- Phaser groups for collision --
+  // -- Phaser groups --
   private enemyGroup!: Phaser.Physics.Arcade.Group;
   private projectileGroup!: Phaser.Physics.Arcade.Group;
   private xpGemGroup!: Phaser.Physics.Arcade.Group;
   private itemGroup!: Phaser.Physics.Arcade.Group;
 
-  // -- Joystick state --
+  // -- Joystick --
   private joyBase!: Phaser.GameObjects.Sprite;
   private joyThumb!: Phaser.GameObjects.Sprite;
   private joyPointer: Phaser.Input.Pointer | null = null;
@@ -290,8 +98,9 @@ export class GameScene extends Phaser.Scene {
   private cycleNumber = 1;
   private legions: LegionData[] = [];
   private legionEntities: LegionEntity[] = [];
+  private cycleTransitioning = false;
 
-  // -- Level-up selection --
+  // -- Level-up --
   private levelUpContainer!: Phaser.GameObjects.Container;
   private pendingLevelUp = false;
 
@@ -305,39 +114,40 @@ export class GameScene extends Phaser.Scene {
   private isPaused = false;
   private killStreak = 0;
   private lastKillTime = 0;
-  private totalSurvivalTime = 0; // Total time across all cycles
+  private totalSurvivalTime = 0;
 
-  // -- Dodge roll --
+  // -- Dodge --
   private isDodging = false;
   private dodgeTimer = 0;
   private dodgeCooldown = 0;
-  private static readonly DODGE_DURATION = 0.25;   // seconds of i-frames
-  private static readonly DODGE_COOLDOWN = 1.5;     // seconds between dodges
-  private static readonly DODGE_SPEED = 400;         // dash speed
+  private static readonly DODGE_DURATION = 0.25;
+  private static readonly DODGE_COOLDOWN = 1.5;
+  private static readonly DODGE_SPEED = 400;
 
   // -- Evolution --
   private aceEvoStage = 0;
 
   // -- Combat perks --
-  private critChance = 0;       // 0-1, chance of 2x damage
-  private lifestealRate = 0;    // 0-1, fraction of damage healed
-  private xpMagnetRange = 60;   // Base XP gem pickup range
+  private critChance = 0;
+  private lifestealRate = 0;
+  private xpMagnetRange = 60;
 
-  // -- Skill effect state --
-  private skillId = "";                 // Active starter skill
-  private flashFireStacks = 0;          // cyndaquil: +1% ATK per kill
-  private speedBoostStacks = 0;         // torchic: +5% every 30s
-  private unburdenTimer = 0;            // treecko: speed buff timer
-  private sturdyAvailable = true;       // geodude: survive one fatal hit
-  private phaseTimer = 0;               // gastly: phase through enemies
-  private adaptabilityMult = 1;         // eevee: 1.2x stat boosts
+  // -- Skill state --
+  private skillId = "";
+  private skillTimer = 0;
+  private flashFireStacks = 0;
+  private speedBoostStacks = 0;
+  private unburdenTimer = 0;
+  private sturdyAvailable = true;
+  private phaseTimer = 0;
+  private adaptabilityMult = 1;
   private companionEvoStages: Map<string, number> = new Map();
 
   // -- Wave system --
   private waveNumber = 0;
   private waveTimer = 0;
-  private waveRestTimer = 0;       // Rest period between waves
-  private waveEnemiesRemaining = 0; // Enemies left in current wave
+  private waveRestTimer = 0;
+  private waveEnemiesRemaining = 0;
   private inWaveRest = false;
 
   // -- UI --
@@ -349,38 +159,150 @@ export class GameScene extends Phaser.Scene {
   private cycleText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private dodgeBtn!: Phaser.GameObjects.Text;
-
-  // -- Damage popup pool --
   private dmgPopups: Phaser.GameObjects.Text[] = [];
-
-  // -- Pause menu --
   private pauseContainer!: Phaser.GameObjects.Container;
   private manualPause = false;
-
-  // -- Danger vignette --
   private dangerVignette!: Phaser.GameObjects.Graphics;
+  private minimapGfx!: Phaser.GameObjects.Graphics;
+  private aimGfx!: Phaser.GameObjects.Graphics;
+  private starGfx!: Phaser.GameObjects.Graphics;
 
-  // -- Achievements --
+  // -- Save / achievements --
   private saveData: SaveData = loadSaveData();
   private achievementQueue: Achievement[] = [];
   private showingAchievement = false;
 
-  // -- Minimap + aim indicator --
-  private minimapGfx!: Phaser.GameObjects.Graphics;
-  private aimGfx!: Phaser.GameObjects.Graphics;
-
-  // -- World camera offset (infinite map illusion) --
-  private worldOffset = new Phaser.Math.Vector2(0, 0);
-
-  // -- Stars background --
-  private stars: { x: number; y: number; alpha: number; speed: number }[] = [];
-  private starGfx!: Phaser.GameObjects.Graphics;
+  // -- Starter --
+  private starterKey = "pikachu";
 
   constructor() {
     super({ key: "GameScene" });
   }
 
-  private starterKey = "pikachu";
+  // ================================================================
+  // CONTEXT — snapshot for managers
+  // ================================================================
+
+  private get ctx(): GameContext {
+    return {
+      scene: this,
+      ace: this.ace,
+      enemies: this.enemies,
+      projectiles: this.projectiles,
+      companions: this.companions,
+      xpGems: this.xpGems,
+      items: this.items,
+      enemyProjectiles: this.enemyProjectiles,
+      legionEntities: this.legionEntities,
+      legions: this.legions,
+      enemyGroup: this.enemyGroup,
+      projectileGroup: this.projectileGroup,
+      xpGemGroup: this.xpGemGroup,
+      itemGroup: this.itemGroup,
+      xp: this.xp,
+      level: this.level,
+      xpToNext: this.xpToNext,
+      kills: this.kills,
+      killStreak: this.killStreak,
+      lastKillTime: this.lastKillTime,
+      cycleTimer: this.cycleTimer,
+      spawnTimer: this.spawnTimer,
+      isPaused: this.isPaused,
+      pendingLevelUp: this.pendingLevelUp,
+      totalSurvivalTime: this.totalSurvivalTime,
+      cycleNumber: this.cycleNumber,
+      starterKey: this.starterKey,
+      waveNumber: this.waveNumber,
+      waveTimer: this.waveTimer,
+      waveRestTimer: this.waveRestTimer,
+      waveEnemiesRemaining: this.waveEnemiesRemaining,
+      inWaveRest: this.inWaveRest,
+      boss: this.boss,
+      bossSpawned: this.bossSpawned,
+      bossWarningShown: this.bossWarningShown,
+      isDodging: this.isDodging,
+      dodgeTimer: this.dodgeTimer,
+      dodgeCooldown: this.dodgeCooldown,
+      aceEvoStage: this.aceEvoStage,
+      companionEvoStages: this.companionEvoStages,
+      critChance: this.critChance,
+      lifestealRate: this.lifestealRate,
+      xpMagnetRange: this.xpMagnetRange,
+      skillId: this.skillId,
+      skillTimer: this.skillTimer,
+      flashFireStacks: this.flashFireStacks,
+      speedBoostStacks: this.speedBoostStacks,
+      unburdenTimer: this.unburdenTimer,
+      sturdyAvailable: this.sturdyAvailable,
+      phaseTimer: this.phaseTimer,
+      adaptabilityMult: this.adaptabilityMult,
+      saveData: this.saveData,
+      achievementQueue: this.achievementQueue,
+      showingAchievement: this.showingAchievement,
+      hpBar: this.hpBar,
+      xpBar: this.xpBar,
+      timerText: this.timerText,
+      killText: this.killText,
+      levelText: this.levelText,
+      cycleText: this.cycleText,
+      waveText: this.waveText,
+      bossHpBar: this.bossHpBar,
+      bossNameText: this.bossNameText,
+      minimapGfx: this.minimapGfx,
+      aimGfx: this.aimGfx,
+      dangerVignette: this.dangerVignette,
+      levelUpContainer: this.levelUpContainer,
+      pauseContainer: this.pauseContainer,
+      joyBase: this.joyBase,
+      joyThumb: this.joyThumb,
+      joyPointer: this.joyPointer,
+      joyVector: this.joyVector,
+      dmgPopups: this.dmgPopups,
+      // Callbacks
+      onEnemyDeath: (enemy) => this.handleEnemyDeath(enemy),
+      damageAce: (amount) => this.handleDamageAce(amount),
+      fireProjectile: (fx, fy, tx, ty, d) => fireProjectile(this.ctx, fx, fy, tx, ty, d),
+      findNearestEnemy: (x, y, r) => findNearestEnemy(this.ctx, x, y, r),
+      showDamagePopup: (x, y, a, c) => showDamagePopup(this.ctx, x, y, a, c),
+      collectXpGem: (gem) => this.handleCollectXpGem(gem),
+    };
+  }
+
+  /** Sync mutable context fields back into scene state */
+  private syncBack(c: GameContext): void {
+    this.xp = c.xp;
+    this.level = c.level;
+    this.xpToNext = c.xpToNext;
+    this.kills = c.kills;
+    this.killStreak = c.killStreak;
+    this.lastKillTime = c.lastKillTime;
+    this.spawnTimer = c.spawnTimer;
+    this.isPaused = c.isPaused;
+    this.pendingLevelUp = c.pendingLevelUp;
+    this.waveNumber = c.waveNumber;
+    this.waveTimer = c.waveTimer;
+    this.waveRestTimer = c.waveRestTimer;
+    this.waveEnemiesRemaining = c.waveEnemiesRemaining;
+    this.inWaveRest = c.inWaveRest;
+    this.boss = c.boss;
+    this.bossSpawned = c.bossSpawned;
+    this.bossWarningShown = c.bossWarningShown;
+    this.aceEvoStage = c.aceEvoStage;
+    this.critChance = c.critChance;
+    this.lifestealRate = c.lifestealRate;
+    this.xpMagnetRange = c.xpMagnetRange;
+    this.skillTimer = c.skillTimer;
+    this.flashFireStacks = c.flashFireStacks;
+    this.speedBoostStacks = c.speedBoostStacks;
+    this.unburdenTimer = c.unburdenTimer;
+    this.sturdyAvailable = c.sturdyAvailable;
+    this.phaseTimer = c.phaseTimer;
+    this.showingAchievement = c.showingAchievement;
+  }
+
+  // ================================================================
+  // LIFECYCLE
+  // ================================================================
 
   init(data?: CyclePassData): void {
     this.cycleTransitioning = false;
@@ -392,8 +314,6 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.resetState();
-
-    // Set up large world
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     this.createStarfield();
@@ -406,54 +326,79 @@ export class GameScene extends Phaser.Scene {
     this.createDangerVignette();
     sfx.startBgm();
 
-    // Camera follows player smoothly
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.startFollow(this.ace.sprite, true, 0.1, 0.1);
-
-    // Fade in from black
     this.cameras.main.fadeIn(500, 0, 0, 0);
 
-    // Show tutorial on first cycle
-    if (this.cycleNumber === 1) {
-      this.showTutorial();
+    if (this.cycleNumber === 1) this.showTutorial();
+  }
+
+  // ================================================================
+  // UPDATE LOOP
+  // ================================================================
+
+  update(_time: number, delta: number): void {
+    if (this.isPaused) return;
+    const dt = delta / 1000;
+    const c = this.ctx;
+
+    this.updateTimer(dt);
+    this.updateAceMovement(dt);
+    this.updateEnemySpawning(dt);
+
+    updateEnemies(c, dt);
+    updateAceAutoAttack(c);
+    updateCompanions(c, dt);
+    updateLegions(c, dt);
+    updateProjectiles(c);
+    updateEnemyProjectiles(c, dt);
+    updateXpGemMagnet(c);
+    updateItems(c, dt);
+    updateKillStreak(c);
+    updateSkillEffects(c, dt);
+
+    this.syncBack(c);
+
+    // Handle pending level-up
+    if (this.pendingLevelUp) {
+      this.showLevelUpSelection();
+    }
+
+    // Handle ace death
+    if (this.ace.hp <= 0 && !this.isPaused) {
+      this.ace.hp = 0;
+      this.onAceDeath();
+      return;
+    }
+
+    this.checkAchievements();
+    updateDangerVignette(c);
+    drawHUD(c);
+  }
+
+  // ================================================================
+  // CALLBACK HANDLERS (bridge between managers and scene)
+  // ================================================================
+
+  private handleEnemyDeath(enemy: EnemyData): void {
+    const wasBoss = enemy === this.boss;
+    onEnemyDeath(this.ctx, enemy);
+    this.syncBack(this.ctx);
+    if (wasBoss) this.onBossDefeated();
+  }
+
+  private handleDamageAce(amount: number): void {
+    damageAce(this.ctx, amount);
+    this.syncBack(this.ctx);
+    if (this.ace.hp <= 0 && !this.isPaused) {
+      this.ace.hp = 0;
+      this.onAceDeath();
     }
   }
 
-  private showTutorial(): void {
-    this.isPaused = true;
-    const overlay = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
-      .setScrollFactor(0)
-      .setDepth(500);
-
-    const lines = [
-      "HOW TO PLAY",
-      "",
-      "Drag anywhere to move",
-      "Auto-attack nearest enemy",
-      "Collect XP gems to level up",
-      "Survive waves & defeat the boss!",
-      "",
-      "[ Tap to Start ]",
-    ];
-    const text = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, lines.join("\n"), {
-        fontFamily: "monospace",
-        fontSize: "14px",
-        color: "#fff",
-        align: "center",
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(501);
-
-    overlay.setInteractive();
-    overlay.once("pointerdown", () => {
-      overlay.destroy();
-      text.destroy();
-      this.isPaused = false;
-    });
+  private handleCollectXpGem(gem: XpGem): void {
+    collectXpGem(this.ctx, gem);
+    this.syncBack(this.ctx);
   }
 
   // ================================================================
@@ -493,28 +438,16 @@ export class GameScene extends Phaser.Scene {
     this.critChance = 0;
     this.lifestealRate = 0;
     this.xpMagnetRange = 60;
-    this.worldOffset.set(0, 0);
     this.legionEntities = [];
-    // Note: cycleNumber and legions are preserved via init()
   }
 
-  /** Get dungeon tile key based on current cycle */
   private getDungeonTileKey(): string {
-    const CYCLE_TILES = [
-      "dungeon-tiny",     // Cycle 1: TinyWoods (bright, easy)
-      "dungeon-steel",    // Cycle 2: MtSteel (earthy, medium)
-      "dungeon-crystal",  // Cycle 3: CrystalCave (purple-blue)
-      "dungeon-forest",   // Cycle 4: MystifyingForest (dark red-brown)
-      "dungeon-frost",    // Cycle 5: FrostyForest (icy)
-      "dungeon-floor",    // Cycle 6+: DarkCrater (boss/nightmare)
-    ];
     const idx = Math.min(this.cycleNumber - 1, CYCLE_TILES.length - 1);
     const key = CYCLE_TILES[idx];
     return this.textures.exists(key) ? key : "dungeon-floor";
   }
 
   private createStarfield(): void {
-    // Tile dungeon floor across entire world
     const tileKey = this.getDungeonTileKey();
     if (this.textures.exists(tileKey)) {
       const tex = this.textures.get(tileKey);
@@ -527,46 +460,36 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.starGfx = this.add.graphics().setDepth(-10);
-    // Add decorations (rocks, bushes) scattered across the world
     this.placeWorldDecorations();
   }
 
-  /** Scatter decorative elements across the world for visual variety */
   private placeWorldDecorations(): void {
     const gfx = this.add.graphics().setDepth(-5);
     const rng = new Phaser.Math.RandomDataGenerator([`${this.cycleNumber}`]);
-    const count = 200;
-
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < 200; i++) {
       const x = rng.between(50, WORLD_WIDTH - 50);
       const y = rng.between(50, WORLD_HEIGHT - 50);
       const type = rng.between(0, 3);
-
       if (type === 0) {
-        // Small rock cluster
         gfx.fillStyle(0x555566, 0.35);
         gfx.fillCircle(x, y, 4 + rng.between(0, 3));
         gfx.fillCircle(x + 5, y + 3, 3);
       } else if (type === 1) {
-        // Grass tuft
         gfx.fillStyle(0x3a6b35, 0.25);
         gfx.fillTriangle(x, y, x - 3, y + 6, x + 3, y + 6);
         gfx.fillTriangle(x + 4, y + 1, x + 1, y + 7, x + 7, y + 7);
       } else if (type === 2) {
-        // Cracks / scratches on floor
         gfx.lineStyle(1, 0x000000, 0.15);
         const len = 8 + rng.between(0, 12);
         const angle = rng.realInRange(0, Math.PI);
         gfx.lineBetween(x, y, x + Math.cos(angle) * len, y + Math.sin(angle) * len);
       } else {
-        // Small dark spot
         gfx.fillStyle(0x000000, 0.12);
         gfx.fillCircle(x, y, 2 + rng.between(0, 2));
       }
     }
   }
 
-  /** Starter base stats — derived from ALL_STARTERS shared data */
   private static get STARTER_STATS(): Record<string, { hp: number; atk: number; speed: number; range: number; cooldown: number }> {
     const map: Record<string, { hp: number; atk: number; speed: number; range: number; cooldown: number }> = {};
     for (const s of ALL_STARTERS) {
@@ -579,14 +502,8 @@ export class GameScene extends Phaser.Scene {
     const aceKey = this.starterKey;
     const texKey = pacTexKey(aceKey);
     const usePmd = this.textures.exists(texKey);
-    const sprite = this.physics.add.sprite(
-      WORLD_WIDTH / 2,
-      WORLD_HEIGHT / 2,
-      usePmd ? texKey : "ace",
-    );
-    sprite.setDepth(10);
-    sprite.setCollideWorldBounds(true);
-
+    const sprite = this.physics.add.sprite(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, usePmd ? texKey : "ace");
+    sprite.setDepth(10).setCollideWorldBounds(true);
     if (usePmd) {
       sprite.play(`${aceKey}-walk-down`);
       sprite.setScale(1.5);
@@ -606,7 +523,6 @@ export class GameScene extends Phaser.Scene {
       lastAttackTime: 0,
     };
 
-    // Apply starter skill
     this.skillId = STARTER_SKILLS[aceKey]?.effectId ?? "";
     this.skillTimer = 0;
     this.flashFireStacks = 0;
@@ -616,295 +532,79 @@ export class GameScene extends Phaser.Scene {
     this.phaseTimer = 0;
     this.adaptabilityMult = this.skillId === "adaptability" ? 1.2 : 1;
 
-    // Guts: +50% ATK, -20% speed
     if (this.skillId === "guts") {
       this.ace.atk = Math.floor(this.ace.atk * 1.5);
       this.ace.speed = Math.floor(this.ace.speed * 0.8);
-      this.ace.attackRange = Math.max(60, this.ace.attackRange - 30); // melee range
+      this.ace.attackRange = Math.max(60, this.ace.attackRange - 30);
     }
   }
 
   private createLegions(): void {
-    // Spawn visual representations of past legions
     this.legionEntities = [];
     for (let i = 0; i < this.legions.length; i++) {
       const legion = this.legions[i];
       const gfx = this.add.graphics().setDepth(4);
-
-      // LOD: first 3 legions get detailed rendering, rest are simpler
-      const entity: LegionEntity = {
+      this.legionEntities.push({
         data: legion,
         gfx,
         orbitAngle: (i * Math.PI * 2) / Math.max(this.legions.length, 1),
         orbitDist: 70 + i * 20,
         lastAttackTime: 0,
-        // Attack faster for higher DPS legions
         attackInterval: Math.max(500, 2000 - legion.dps * 20),
         attackRange: 100 + Math.min(legion.dps, 50),
-      };
-      this.legionEntities.push(entity);
+      });
     }
   }
 
   private createUI(): void {
-    // HP bar background + fill
     this.hpBar = this.add.graphics().setDepth(100).setScrollFactor(0);
-
-    // XP bar
     this.xpBar = this.add.graphics().setDepth(100).setScrollFactor(0);
 
-    // Timer
-    this.timerText = this.add
-      .text(GAME_WIDTH / 2, 8, "5:00", {
-        fontFamily: "monospace",
-        fontSize: "16px",
-        color: "#e0e0e0",
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(100)
-      .setScrollFactor(0);
+    this.timerText = this.add.text(GAME_WIDTH / 2, 8, "5:00", {
+      fontFamily: "monospace", fontSize: "16px", color: "#e0e0e0",
+    }).setOrigin(0.5, 0).setDepth(100).setScrollFactor(0);
 
-    // Kill count
-    this.killText = this.add
-      .text(GAME_WIDTH - 8, GAME_HEIGHT - 12, "Kill: 0", {
-        fontFamily: "monospace",
-        fontSize: "12px",
-        color: "#888",
-      })
-      .setOrigin(1, 1)
-      .setDepth(100)
-      .setScrollFactor(0);
+    this.killText = this.add.text(GAME_WIDTH - 8, GAME_HEIGHT - 12, "Kill: 0", {
+      fontFamily: "monospace", fontSize: "12px", color: "#888",
+    }).setOrigin(1, 1).setDepth(100).setScrollFactor(0);
 
-    // Level
-    this.levelText = this.add
-      .text(8, 28, "Lv.1", {
-        fontFamily: "monospace",
-        fontSize: "13px",
-        color: "#667eea",
-      })
-      .setOrigin(0, 0)
-      .setDepth(100)
-      .setScrollFactor(0);
+    this.levelText = this.add.text(8, 28, "Lv.1", {
+      fontFamily: "monospace", fontSize: "13px", color: "#667eea",
+    }).setOrigin(0, 0).setDepth(100).setScrollFactor(0);
 
-    // Cycle info (top right)
-    this.cycleText = this.add
-      .text(GAME_WIDTH - 8, 8, `Cycle ${this.cycleNumber}`, {
-        fontFamily: "monospace",
-        fontSize: "12px",
-        color: "#fbbf24",
-      })
-      .setOrigin(1, 0)
-      .setDepth(100)
-      .setScrollFactor(0);
+    this.cycleText = this.add.text(GAME_WIDTH - 8, 8, `Cycle ${this.cycleNumber}`, {
+      fontFamily: "monospace", fontSize: "12px", color: "#fbbf24",
+    }).setOrigin(1, 0).setDepth(100).setScrollFactor(0);
 
-    // Wave info (below cycle)
-    this.waveText = this.add
-      .text(GAME_WIDTH - 8, 24, "", {
-        fontFamily: "monospace",
-        fontSize: "11px",
-        color: "#a78bfa",
-      })
-      .setOrigin(1, 0)
-      .setDepth(100)
-      .setScrollFactor(0);
+    this.waveText = this.add.text(GAME_WIDTH - 8, 24, "", {
+      fontFamily: "monospace", fontSize: "11px", color: "#a78bfa",
+    }).setOrigin(1, 0).setDepth(100).setScrollFactor(0);
 
-    // Dodge button placeholder (hidden — dodge removed, single-thumb controls)
-    this.dodgeBtn = this.add
-      .text(0, 0, "", { fontFamily: "monospace", fontSize: "1px" })
-      .setVisible(false)
-      .setScrollFactor(0);
+    this.dodgeBtn = this.add.text(0, 0, "", { fontFamily: "monospace", fontSize: "1px" })
+      .setVisible(false).setScrollFactor(0);
 
-    // Boss HP bar (hidden until boss spawns)
     this.bossHpBar = this.add.graphics().setDepth(100).setScrollFactor(0).setVisible(false);
-    this.bossNameText = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 40, "", {
-        fontFamily: "monospace",
-        fontSize: "12px",
-        color: "#ff00ff",
-      })
-      .setOrigin(0.5)
-      .setDepth(100)
-      .setScrollFactor(0)
-      .setVisible(false);
+    this.bossNameText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 40, "", {
+      fontFamily: "monospace", fontSize: "12px", color: "#ff00ff",
+    }).setOrigin(0.5).setDepth(100).setScrollFactor(0).setVisible(false);
 
-    // Minimap
     this.minimapGfx = this.add.graphics().setDepth(99).setScrollFactor(0);
-
-    // Aim indicator (world-space, follows camera)
     this.aimGfx = this.add.graphics().setDepth(8);
 
-    // Pause button (top-left area, below HP bar)
-    const pauseBtn = this.add
-      .text(GAME_WIDTH - 36, 44, "❚❚", {
-        fontFamily: "monospace",
-        fontSize: "18px",
-        color: "#888",
-      })
-      .setOrigin(0.5)
-      .setDepth(101)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-
+    const pauseBtn = this.add.text(GAME_WIDTH - 36, 44, "\u275A\u275A", {
+      fontFamily: "monospace", fontSize: "18px", color: "#888",
+    }).setOrigin(0.5).setDepth(101).setScrollFactor(0).setInteractive({ useHandCursor: true });
     pauseBtn.on("pointerdown", () => this.togglePause());
 
-    // Pause menu container (hidden)
     this.pauseContainer = this.add.container(0, 0).setDepth(600).setScrollFactor(0).setVisible(false);
-
-    // Level-up selection container (hidden)
     this.levelUpContainer = this.add.container(0, 0).setDepth(500).setScrollFactor(0).setVisible(false);
   }
 
-  private togglePause(): void {
-    if (this.pendingLevelUp) return; // Don't pause during level-up
-
-    if (this.manualPause) {
-      this.resumeGame();
-    } else {
-      this.showPauseMenu();
-    }
-  }
-
-  private showPauseMenu(): void {
-    this.manualPause = true;
-    this.isPaused = true;
-    this.pauseContainer.removeAll(true);
-    this.pauseContainer.setVisible(true);
-
-    // Overlay
-    const overlay = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
-      .setScrollFactor(0);
-    this.pauseContainer.add(overlay);
-
-    // PAUSED title
-    const title = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, "PAUSED", {
-        fontFamily: "monospace",
-        fontSize: "28px",
-        color: "#667eea",
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0);
-    this.pauseContainer.add(title);
-
-    // Resume button
-    const resumeBtn = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "[ Resume ]", {
-        fontFamily: "monospace",
-        fontSize: "18px",
-        color: "#3bc95e",
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-    resumeBtn.on("pointerdown", () => this.resumeGame());
-    resumeBtn.on("pointerover", () => resumeBtn.setColor("#4ade80"));
-    resumeBtn.on("pointerout", () => resumeBtn.setColor("#3bc95e"));
-    this.pauseContainer.add(resumeBtn);
-
-    // Volume controls
-    const volLabel = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, "Volume", {
-        fontFamily: "monospace",
-        fontSize: "12px",
-        color: "#888",
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0);
-    this.pauseContainer.add(volLabel);
-
-    const volDown = this.add
-      .text(GAME_WIDTH / 2 - 60, GAME_HEIGHT / 2 + 80, "[ - ]", {
-        fontFamily: "monospace",
-        fontSize: "16px",
-        color: "#fbbf24",
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-    volDown.on("pointerdown", () => sfx.adjustVolume(-0.1));
-    this.pauseContainer.add(volDown);
-
-    const volUp = this.add
-      .text(GAME_WIDTH / 2 + 60, GAME_HEIGHT / 2 + 80, "[ + ]", {
-        fontFamily: "monospace",
-        fontSize: "16px",
-        color: "#fbbf24",
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-    volUp.on("pointerdown", () => sfx.adjustVolume(0.1));
-    this.pauseContainer.add(volUp);
-
-    // Main menu button
-    const menuBtn = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, "[ Main Menu ]", {
-        fontFamily: "monospace",
-        fontSize: "16px",
-        color: "#f43f5e",
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-    menuBtn.on("pointerdown", () => {
-      sfx.stopBgm();
-      this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
-    });
-    menuBtn.on("pointerover", () => menuBtn.setColor("#ff6b6b"));
-    menuBtn.on("pointerout", () => menuBtn.setColor("#f43f5e"));
-    this.pauseContainer.add(menuBtn);
-  }
-
-  private resumeGame(): void {
-    this.manualPause = false;
-    this.isPaused = false;
-    this.pauseContainer.setVisible(false);
-    this.pauseContainer.removeAll(true);
-  }
-
-  private createDangerVignette(): void {
-    // Red vignette overlay that appears when HP is low
-    this.dangerVignette = this.add.graphics().setDepth(95).setScrollFactor(0);
-    this.dangerVignette.setAlpha(0);
-  }
-
-  private updateDangerVignette(): void {
-    const hpRatio = this.ace.hp / this.ace.maxHp;
-    if (hpRatio < 0.3) {
-      // Pulsing red vignette
-      const pulse = Math.sin(this.time.now * 0.005) * 0.15 + 0.2;
-      const intensity = (1 - hpRatio / 0.3) * pulse;
-      this.dangerVignette.clear();
-      this.dangerVignette.fillStyle(0xff0000, intensity);
-      // Draw border rectangles (top, bottom, left, right)
-      this.dangerVignette.fillRect(0, 0, GAME_WIDTH, 40);
-      this.dangerVignette.fillRect(0, GAME_HEIGHT - 40, GAME_WIDTH, 40);
-      this.dangerVignette.fillRect(0, 0, 30, GAME_HEIGHT);
-      this.dangerVignette.fillRect(GAME_WIDTH - 30, 0, 30, GAME_HEIGHT);
-      this.dangerVignette.setAlpha(1);
-    } else {
-      this.dangerVignette.clear();
-    }
-  }
-
   private createJoystick(): void {
-    // Fixed joystick at bottom center
     const jx = GAME_WIDTH / 2;
     const jy = GAME_HEIGHT - 100;
-
-    this.joyBase = this.add
-      .sprite(jx, jy, "joy-base")
-      .setDepth(90)
-      .setScrollFactor(0)
-      .setAlpha(0.4);
-
-    this.joyThumb = this.add
-      .sprite(jx, jy, "joy-thumb")
-      .setDepth(91)
-      .setScrollFactor(0);
+    this.joyBase = this.add.sprite(jx, jy, "joy-base").setDepth(90).setScrollFactor(0).setAlpha(0.4);
+    this.joyThumb = this.add.sprite(jx, jy, "joy-thumb").setDepth(91).setScrollFactor(0);
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
       if (this.isPaused) return;
@@ -912,12 +612,10 @@ export class GameScene extends Phaser.Scene {
       this.joyBase.setAlpha(0.6);
       this.updateJoystick(p);
     });
-
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
       if (p !== this.joyPointer) return;
       this.updateJoystick(p);
     });
-
     this.input.on("pointerup", (p: Phaser.Input.Pointer) => {
       if (p === this.joyPointer) {
         this.joyPointer = null;
@@ -935,12 +633,10 @@ export class GameScene extends Phaser.Scene {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const clampedDist = Math.min(dist, maxDist);
     const angle = Math.atan2(dy, dx);
-
     this.joyThumb.setPosition(
       this.joyBase.x + Math.cos(angle) * clampedDist,
       this.joyBase.y + Math.sin(angle) * clampedDist,
     );
-
     const strength = clampedDist / maxDist;
     this.joyVector.set(Math.cos(angle) * strength, Math.sin(angle) * strength);
   }
@@ -953,56 +649,34 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupCollisions(): void {
-    // Projectile hits enemy
-    this.physics.add.overlap(
-      this.projectileGroup,
-      this.enemyGroup,
-      (projObj, enemyObj) => {
-        const proj = this.projectiles.find(
-          (p) => p.sprite === projObj,
-        );
-        const enemy = this.enemies.find((e) => e.sprite === enemyObj);
-        if (proj && enemy) this.onProjectileHitEnemy(proj, enemy);
-      },
-    );
-
-    // Player picks up XP gems (large pickup radius)
-    this.physics.add.overlap(
-      this.ace.sprite,
-      this.xpGemGroup,
-      (_aceObj, gemObj) => {
-        const gem = this.xpGems.find((g) => g.sprite === gemObj);
-        if (gem) this.collectXpGem(gem);
-      },
-    );
+    this.physics.add.overlap(this.projectileGroup, this.enemyGroup, (projObj, enemyObj) => {
+      const proj = this.projectiles.find((p) => p.sprite === projObj);
+      const enemy = this.enemies.find((e) => e.sprite === enemyObj);
+      if (proj && enemy) onProjectileHitEnemy(this.ctx, proj, enemy);
+    });
+    this.physics.add.overlap(this.ace.sprite, this.xpGemGroup, (_aceObj, gemObj) => {
+      const gem = this.xpGems.find((g) => g.sprite === gemObj);
+      if (gem) this.handleCollectXpGem(gem);
+    });
   }
 
-  // ================================================================
-  // UPDATE LOOP
-  // ================================================================
+  private createDangerVignette(): void {
+    this.dangerVignette = this.add.graphics().setDepth(95).setScrollFactor(0);
+    this.dangerVignette.setAlpha(0);
+  }
 
-  update(_time: number, delta: number): void {
-    if (this.isPaused) return;
-
-    const dt = delta / 1000;
-
-    this.updateTimer(dt);
-    this.updateAceMovement(dt);
-    this.updateStarfield(dt);
-    this.updateEnemySpawning(dt);
-    this.updateEnemies(dt);
-    this.updateAceAutoAttack();
-    this.updateCompanions(dt);
-    this.updateLegions(dt);
-    this.updateProjectiles(dt);
-    this.updateEnemyProjectiles(dt);
-    this.updateXpGemMagnet();
-    this.updateItems(dt);
-    this.updateKillStreak();
-    this.updateSkillEffects(dt);
-    this.checkAchievements();
-    this.updateDangerVignette();
-    this.drawUI();
+  private showTutorial(): void {
+    this.isPaused = true;
+    const overlay = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
+      .setScrollFactor(0).setDepth(500);
+    const text = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2,
+      ["HOW TO PLAY", "", "Drag anywhere to move", "Auto-attack nearest enemy",
+       "Collect XP gems to level up", "Survive waves & defeat the boss!", "", "[ Tap to Start ]"].join("\n"),
+      { fontFamily: "monospace", fontSize: "14px", color: "#fff", align: "center", lineSpacing: 6 },
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(501);
+    overlay.setInteractive();
+    overlay.once("pointerdown", () => { overlay.destroy(); text.destroy(); this.isPaused = false; });
   }
 
   // ================================================================
@@ -1016,21 +690,19 @@ export class GameScene extends Phaser.Scene {
 
     const elapsed = CYCLE_DURATION_SEC - this.cycleTimer;
 
-    // Boss warning at 3:00 (180s elapsed)
     if (elapsed >= 180 && !this.bossWarningShown) {
       this.bossWarningShown = true;
       sfx.playBossWarning();
       sfx.switchBgm(BGM_TRACKS.danger);
-      this.showWarning("WARNING!");
+      showWarning(this.ctx, "WARNING!");
     }
 
-    // Boss spawn at 4:00 (240s elapsed)
     if (elapsed >= 240 && !this.bossSpawned) {
       this.bossSpawned = true;
-      this.spawnBoss();
+      spawnBoss(this.ctx);
+      this.syncBack(this.ctx);
     }
 
-    // Time's up without killing boss
     if (this.cycleTimer <= 0 && this.boss) {
       this.onAceDeath();
     }
@@ -1046,7 +718,6 @@ export class GameScene extends Phaser.Scene {
   // ================================================================
 
   private updateAceMovement(dt: number): void {
-    // Update dodge timers
     if (this.dodgeCooldown > 0) this.dodgeCooldown -= dt;
     if (this.isDodging) {
       this.dodgeTimer -= dt;
@@ -1056,25 +727,18 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Update dodge button visual
     if (this.dodgeCooldown > 0) {
-      this.dodgeBtn.setAlpha(0.2);
-      this.dodgeBtn.setColor("#666");
+      this.dodgeBtn.setAlpha(0.2).setColor("#666");
     } else {
-      this.dodgeBtn.setAlpha(0.6);
-      this.dodgeBtn.setColor("#667eea");
+      this.dodgeBtn.setAlpha(0.6).setColor("#667eea");
     }
 
-    // During dodge, don't override velocity (dash in progress)
     if (this.isDodging) return;
 
     const vx = this.joyVector.x * this.ace.speed;
     const vy = this.joyVector.y * this.ace.speed;
-
     this.ace.sprite.setVelocity(vx, vy);
 
-    // Update walk animation direction for PMD sprites
-    // Use current texture key (changes on evolution)
     const curTexKey = this.ace.sprite.texture.key;
     if (curTexKey.startsWith("pac-")) {
       const spriteKey = curTexKey.replace("pac-", "");
@@ -1086,51 +750,15 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
-
-    // World bounds enforced by physics collideWorldBounds
-  }
-
-  private tryDodge(): void {
-    if (this.isDodging || this.dodgeCooldown > 0) return;
-
-    this.isDodging = true;
-    this.dodgeTimer = GameScene.DODGE_DURATION;
-    this.dodgeCooldown = GameScene.DODGE_COOLDOWN;
-
-    // Dash in joystick direction, or face direction if stationary
-    let dx = this.joyVector.x;
-    let dy = this.joyVector.y;
-    if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
-      // Default dash downward if no input
-      dy = 1;
-    }
-    const len = Math.sqrt(dx * dx + dy * dy);
-    dx /= len;
-    dy /= len;
-
-    this.ace.sprite.setVelocity(dx * GameScene.DODGE_SPEED, dy * GameScene.DODGE_SPEED);
-
-    // Visual: flicker alpha during dodge
-    this.ace.sprite.setAlpha(0.4);
-    sfx.playPickup(); // Reuse pickup sound for dodge
   }
 
   // ================================================================
-  // STARFIELD
-  // ================================================================
-
-  private updateStarfield(_dt: number): void {
-    // Dungeon floor tiles are static — no per-frame update needed
-  }
-
-  // ================================================================
-  // ENEMY SPAWNING
+  // ENEMY SPAWNING (wave orchestration)
   // ================================================================
 
   private updateEnemySpawning(dt: number): void {
     const elapsed = CYCLE_DURATION_SEC - this.cycleTimer;
 
-    // Wave rest period
     if (this.inWaveRest) {
       this.waveRestTimer -= dt;
       this.waveText.setText(`Next wave in ${Math.ceil(this.waveRestTimer)}s`);
@@ -1141,21 +769,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Start first wave
     if (this.waveNumber === 0) {
       this.startNextWave(elapsed);
       return;
     }
 
-    // Check if current wave is cleared
     if (this.waveEnemiesRemaining <= 0 && this.enemies.length === 0) {
       this.inWaveRest = true;
-      this.waveRestTimer = Math.max(1, 3 - (this.cycleNumber - 1) * 0.3); // Shorter rests at higher cycles
+      this.waveRestTimer = Math.max(1, 3 - (this.cycleNumber - 1) * 0.3);
       this.showWaveClearText();
       return;
     }
 
-    // Spawn enemies for current wave
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
 
@@ -1168,1476 +793,123 @@ export class GameScene extends Phaser.Scene {
     const batchSize = Math.min(this.waveEnemiesRemaining, 1 + Math.floor(this.waveNumber / 4) + Math.floor(this.cycleNumber / 3));
     for (let i = 0; i < batchSize; i++) {
       if (this.waveEnemiesRemaining <= 0) break;
-      this.spawnEnemy(elapsed);
+      spawnEnemy(this.ctx, elapsed);
       this.waveEnemiesRemaining--;
     }
   }
 
   private startNextWave(elapsed: number): void {
     this.waveNumber++;
-    // Sturdy: reset per wave
     if (this.skillId === "sturdy") this.sturdyAvailable = true;
-    // Each wave gets progressively bigger
     this.waveEnemiesRemaining = 5 + this.waveNumber * 3 + this.cycleNumber * 2;
     this.waveText.setText(`Wave ${this.waveNumber}`);
 
-    // Mini-boss every 3 waves starting from wave 3
     if (this.waveNumber >= 3 && this.waveNumber % 3 === 0) {
-      this.spawnMiniBoss(elapsed);
-      // Show only mini-boss warning (skip wave alert to avoid overlap)
+      spawnMiniBoss(this.ctx, elapsed);
     } else {
-      this.showWarning(`Wave ${this.waveNumber}`);
+      showWarning(this.ctx, `Wave ${this.waveNumber}`);
     }
 
-    // Formation events from wave 2 onward (every 2 waves, random type)
     if (this.waveNumber >= 2 && this.waveNumber % 2 === 0) {
       const formationType = Math.floor(Math.random() * 3);
-      if (formationType === 0) {
-        this.spawnEncirclement(elapsed);
-      } else if (formationType === 1) {
-        this.spawnDiagonalMarch(elapsed);
-      } else {
-        this.spawnRushSwarm(elapsed);
-      }
+      if (formationType === 0) spawnEncirclement(this.ctx, elapsed);
+      else if (formationType === 1) spawnDiagonalMarch(this.ctx, elapsed);
+      else spawnRushSwarm(this.ctx, elapsed);
     }
-  }
-
-  /** Formation: Enemies spawn in a ring around the player and close in */
-  private spawnEncirclement(elapsed: number): void {
-    const count = 10 + Math.floor(this.waveNumber * 1.5);
-    const radius = 350;
-    this.showWarning("ENCIRCLEMENT!");
-
-    for (let i = 0; i < count; i++) {
-      this.time.delayedCall(i * 80, () => {
-        if (this.enemies.length >= MAX_ENEMIES) return;
-        const angle = (i / count) * Math.PI * 2;
-        const ex = this.ace.sprite.x + Math.cos(angle) * radius;
-        const ey = this.ace.sprite.y + Math.sin(angle) * radius;
-        this.spawnFormationEnemy(ex, ey, elapsed, "chase");
-      });
-    }
-  }
-
-  /** Formation: A line of enemies marches diagonally across the screen */
-  private spawnDiagonalMarch(elapsed: number): void {
-    const count = 12 + Math.floor(this.waveNumber);
-    const marchAngle = Math.random() * Math.PI * 2;
-    const perpAngle = marchAngle + Math.PI / 2;
-    const startDist = 400;
-    this.showWarning("STAMPEDE!");
-
-    for (let i = 0; i < count; i++) {
-      this.time.delayedCall(i * 120, () => {
-        if (this.enemies.length >= MAX_ENEMIES) return;
-        // Stagger along perpendicular axis, offset along march direction
-        const perpOffset = (i - count / 2) * 30;
-        const ex = this.ace.sprite.x + Math.cos(marchAngle) * startDist + Math.cos(perpAngle) * perpOffset;
-        const ey = this.ace.sprite.y + Math.sin(marchAngle) * startDist + Math.sin(perpAngle) * perpOffset;
-        this.spawnFormationEnemy(ex, ey, elapsed, "charge");
-      });
-    }
-  }
-
-  /** Formation: Rush swarm from one direction */
-  private spawnRushSwarm(elapsed: number): void {
-    const count = 15 + Math.floor(this.waveNumber);
-    const swarmAngle = Math.random() * Math.PI * 2;
-    const startDist = 380;
-    this.showWarning("SWARM!");
-
-    for (let i = 0; i < count; i++) {
-      this.time.delayedCall(i * 50, () => {
-        if (this.enemies.length >= MAX_ENEMIES) return;
-        const spread = (Math.random() - 0.5) * 1.2;
-        const ex = this.ace.sprite.x + Math.cos(swarmAngle + spread) * (startDist + Math.random() * 80);
-        const ey = this.ace.sprite.y + Math.sin(swarmAngle + spread) * (startDist + Math.random() * 80);
-        this.spawnFormationEnemy(ex, ey, elapsed, "swarm");
-      });
-    }
-  }
-
-  /** Spawn a single enemy for a formation event — simplified version of spawnEnemy */
-  private spawnFormationEnemy(x: number, y: number, elapsed: number, behavior: EnemyBehavior): void {
-    const tier = elapsed < 45 ? 0 : elapsed < 90 ? 1 : elapsed < 150 ? 2 : elapsed < 220 ? 3 : 4;
-    const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
-    const hpMult = (1 + tier * 0.5 + elapsed * 0.005) * cycleMult;
-    const pool = GameScene.ENEMY_POOL[Math.min(tier, GameScene.ENEMY_POOL.length - 1)];
-    const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
-    const pmdTexKey = pacTexKey(pokemonKey);
-    const usePmd = this.textures.exists(pmdTexKey);
-
-    const sprite = this.physics.add.sprite(x, y, usePmd ? pmdTexKey : "enemy").setDepth(5);
-    this.enemyGroup.add(sprite);
-    if (usePmd) {
-      sprite.play(`${pokemonKey}-walk-down`);
-      sprite.setTint(0xff8888);
-    }
-    sprite.setScale(0);
-    this.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 200, ease: "Back.easeOut" });
-
-    const hpBarGfx = this.add.graphics().setDepth(6);
-    const baseHp = Math.floor(15 * hpMult);
-    const baseSpd = (40 + tier * 15) * Math.min(cycleMult, 1.5);
-
-    this.enemies.push({
-      sprite, pokemonKey, hp: baseHp, maxHp: baseHp,
-      atk: Math.floor((3 + tier * 2) * cycleMult),
-      speed: baseSpd, behavior, hpBar: hpBarGfx,
-      isElite: false,
-      orbitAngle: behavior === "circle" ? Math.random() * Math.PI * 2 : undefined,
-      chargeTimer: behavior === "charge" ? 2000 + Math.random() * 1500 : undefined,
-      isCharging: false,
-      lastRangedAttack: behavior === "ranged" ? 0 : undefined,
-    });
-  }
-
-  private spawnMiniBoss(elapsed: number): void {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 260;
-    const ex = this.ace.sprite.x + Math.cos(angle) * dist;
-    const ey = this.ace.sprite.y + Math.sin(angle) * dist;
-
-    const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
-    // Pick from tier 1-2 pool
-    const pool = [...GameScene.ENEMY_POOL[2], ...GameScene.ENEMY_POOL[3]];
-    const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
-    const pmdTexKey = pacTexKey(pokemonKey);
-    const usePmd = this.textures.exists(pmdTexKey);
-
-    const sprite = this.physics.add.sprite(ex, ey, usePmd ? pmdTexKey : "enemy-elite").setDepth(7);
-    this.enemyGroup.add(sprite);
-
-    if (usePmd) {
-      sprite.play(`${pokemonKey}-walk-down`);
-    }
-    sprite.setTint(0xff00ff); // Purple tint for mini-boss
-    sprite.setScale(0);
-    this.tweens.add({
-      targets: sprite,
-      scaleX: 1.7,
-      scaleY: 1.7,
-      duration: 400,
-      ease: "Back.easeOut",
-    });
-
-    const hpBarGfx = this.add.graphics().setDepth(8);
-    const miniHp = Math.round(60 * (1 + elapsed * 0.015) * cycleMult);
-
-    const enemy: EnemyData = {
-      sprite,
-      pokemonKey,
-      hp: miniHp,
-      maxHp: miniHp,
-      atk: Math.round((8 + elapsed * 0.03) * cycleMult),
-      speed: 50 + this.cycleNumber * 5,
-      hpBar: hpBarGfx,
-      behavior: "charge",
-      chargeTimer: 1500 + Math.random() * 1000,
-      isCharging: false,
-      isElite: true,
-      isMini: true,
-    };
-    this.enemies.push(enemy);
-
-    this.showWarning("MINI-BOSS!");
   }
 
   private showWaveClearText(): void {
-    // Auto-evolve companions every 5 waves
     if (this.waveNumber > 0 && this.waveNumber % 5 === 0) {
       for (const c of this.companions) {
-        this.evolveCompanion(c);
+        evolveCompanion(this.ctx, c);
       }
     }
 
-    // Vacuum all XP gems on wave clear
     for (const gem of this.xpGems) {
       if (!gem.sprite.active) continue;
-      const angle = Math.atan2(
-        this.ace.sprite.y - gem.sprite.y,
-        this.ace.sprite.x - gem.sprite.x,
-      );
+      const angle = Math.atan2(this.ace.sprite.y - gem.sprite.y, this.ace.sprite.x - gem.sprite.x);
       gem.sprite.setVelocity(Math.cos(angle) * 500, Math.sin(angle) * 500);
     }
 
-    // Small heal on wave clear (10% of max HP)
     this.ace.hp = Math.min(this.ace.hp + Math.floor(this.ace.maxHp * 0.1), this.ace.maxHp);
 
-    const txt = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "WAVE CLEAR!", {
-        fontFamily: "monospace",
-        fontSize: "20px",
-        color: "#a78bfa",
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(200)
-      .setScrollFactor(0);
+    const txt = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "WAVE CLEAR!", {
+      fontFamily: "monospace", fontSize: "20px", color: "#a78bfa", stroke: "#000", strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(200).setScrollFactor(0);
+    this.tweens.add({ targets: txt, y: txt.y - 40, alpha: 0, duration: 1500, onComplete: () => txt.destroy() });
+  }
 
-    this.tweens.add({
-      targets: txt,
-      y: txt.y - 40,
-      alpha: 0,
-      duration: 1500,
-      onComplete: () => txt.destroy(),
+  // ================================================================
+  // PAUSE
+  // ================================================================
+
+  private togglePause(): void {
+    if (this.pendingLevelUp) return;
+    if (this.manualPause) this.resumeGame();
+    else this.showPauseMenu();
+  }
+
+  private showPauseMenu(): void {
+    this.manualPause = true;
+    this.isPaused = true;
+    this.pauseContainer.removeAll(true);
+    this.pauseContainer.setVisible(true);
+
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8).setScrollFactor(0);
+    this.pauseContainer.add(overlay);
+
+    const title = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, "PAUSED", {
+      fontFamily: "monospace", fontSize: "28px", color: "#667eea", stroke: "#000", strokeThickness: 3,
+    }).setOrigin(0.5).setScrollFactor(0);
+    this.pauseContainer.add(title);
+
+    const resumeBtn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "[ Resume ]", {
+      fontFamily: "monospace", fontSize: "18px", color: "#3bc95e",
+    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    resumeBtn.on("pointerdown", () => this.resumeGame());
+    resumeBtn.on("pointerover", () => resumeBtn.setColor("#4ade80"));
+    resumeBtn.on("pointerout", () => resumeBtn.setColor("#3bc95e"));
+    this.pauseContainer.add(resumeBtn);
+
+    const volLabel = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, "Volume", {
+      fontFamily: "monospace", fontSize: "12px", color: "#888",
+    }).setOrigin(0.5).setScrollFactor(0);
+    this.pauseContainer.add(volLabel);
+
+    const volDown = this.add.text(GAME_WIDTH / 2 - 60, GAME_HEIGHT / 2 + 80, "[ - ]", {
+      fontFamily: "monospace", fontSize: "16px", color: "#fbbf24",
+    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    volDown.on("pointerdown", () => sfx.adjustVolume(-0.1));
+    this.pauseContainer.add(volDown);
+
+    const volUp = this.add.text(GAME_WIDTH / 2 + 60, GAME_HEIGHT / 2 + 80, "[ + ]", {
+      fontFamily: "monospace", fontSize: "16px", color: "#fbbf24",
+    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    volUp.on("pointerdown", () => sfx.adjustVolume(0.1));
+    this.pauseContainer.add(volUp);
+
+    const menuBtn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, "[ Main Menu ]", {
+      fontFamily: "monospace", fontSize: "16px", color: "#f43f5e",
+    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    menuBtn.on("pointerdown", () => {
+      sfx.stopBgm();
+      this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
     });
+    menuBtn.on("pointerover", () => menuBtn.setColor("#ff6b6b"));
+    menuBtn.on("pointerout", () => menuBtn.setColor("#f43f5e"));
+    this.pauseContainer.add(menuBtn);
   }
 
-  /** Enemy pokemon pool per tier — 6 tiers covering Gen 1~5 */
-  private static readonly ENEMY_POOL: string[][] = [
-    // Tier 0: weak/common — bugs, rodents, early routes
-    ["rattata", "caterpie", "weedle", "pidgey", "paras", "oddish", "meowth", "sentret", "hoothoot",
-     "ledyba", "spinarak", "wurmple", "zigzagoon", "poochyena", "starly", "bidoof", "lillipup",
-     "pidove", "sewaddle", "venipede", "cottonee"],
-    // Tier 1: uncommon — mid-game pokemon
-    ["zubat", "sandshrew", "ekans", "psyduck", "growlithe", "cubone", "drowzee", "machop",
-     "slowpoke", "magnemite", "koffing", "grimer", "poliwag", "bellsprout", "tentacool", "ponyta",
-     "seel", "voltorb", "horsea", "goldeen", "wooper", "swinub", "hoppip", "slugma", "phanpy",
-     "lotad", "seedot", "taillow", "shroomish", "makuhita", "electrike", "gulpin", "numel",
-     "spoink", "shinx", "buizel", "shellos", "buneary", "stunky", "drilbur", "sandile", "dwebble",
-     "joltik", "woobat"],
-    // Tier 2: strong — evolved or tough pokemon
-    ["raticate", "golbat", "parasect", "geodude", "gastly", "machoke", "kadabra", "gloom",
-     "poliwhirl", "magneton", "graveler", "haunter", "seadra", "nidorina", "nidorino", "weepinbell",
-     "marowak", "weezing", "rhyhorn", "arbok", "flaaffy", "croagunk", "piloswine", "ursaring",
-     "houndour", "sneasel", "aron", "meditite", "trapinch", "sableye", "carvanha", "cacnea",
-     "barboach", "shuppet", "duskull", "bagon", "deino", "darumaka", "scraggy", "roggenrola",
-     "pawniard", "axew", "litwick", "ferroseed", "zorua", "gible"],
-    // Tier 3: elite — powerful, fully evolved
-    ["pinsir", "scyther", "mankey", "vulpix", "clefairy", "dratini", "arcanine", "primeape",
-     "ninetales", "golduck", "tentacruel", "rapidash", "hypno", "kingler", "electabuzz", "magmar",
-     "tauros", "heracross", "scizor", "houndoom", "donphan", "breloom", "hariyama", "aggron",
-     "manectric", "flygon", "absol", "zangoose", "seviper", "mawile", "altaria", "glalie",
-     "luxray", "staraptor", "floatzel", "lopunny", "weavile", "excadrill", "zoroark", "darmanitan",
-     "haxorus", "chandelure", "mienfoo"],
-    // Tier 4: boss-tier — pseudo-legendaries, tanks
-    ["snorlax", "onix", "lapras", "aerodactyl", "dragonite", "tyranitar", "salamence",
-     "metagross", "garchomp", "hydreigon", "volcarona", "gyarados", "nidoking", "nidoqueen",
-     "machamp", "alakazam", "gengar", "blastoise", "charizard", "venusaur", "rhydon",
-     "druddigon", "milotic", "togekiss", "gallade", "mamoswine", "steelix"],
-  ];
-
-  /** Behavior lookup — grouped by fighting style */
-  private static readonly SWARM_POKEMON = new Set([
-    "rattata", "caterpie", "weedle", "paras", "oddish", "meowth", "sentret", "ledyba",
-    "spinarak", "wurmple", "zigzagoon", "poochyena", "starly", "bidoof", "lillipup",
-    "pidove", "sewaddle", "venipede", "cottonee", "lotad", "seedot", "hoppip", "sunkern",
-    "wooper", "gulpin", "spoink", "shellos", "dwebble", "roggenrola", "minccino",
-    "pichu", "togepi", "skitty", "budew", "pachirisu", "plusle", "minun",
-  ]);
-  private static readonly CIRCLE_POKEMON = new Set([
-    "zubat", "pidgey", "spearow", "magnemite", "koffing", "golbat", "crobat",
-    "taillow", "swellow", "wingull", "noctowl", "fearow", "pidgeotto", "pidgeot",
-    "staravia", "staraptor", "aerodactyl", "murkrow", "doduo", "dodrio",
-    "emolga", "drifloon", "swablu", "altaria", "butterfree", "venomoth",
-    "voltorb", "electrode", "lunatone", "solrock", "bronzor", "rotom", "ducklett",
-  ]);
-  private static readonly RANGED_POKEMON = new Set([
-    "gastly", "psyduck", "drowzee", "grimer", "slowpoke", "abra", "kadabra", "alakazam",
-    "exeggcute", "exeggutor", "starmie", "mrmime", "jynx", "haunter", "gengar",
-    "misdreavus", "natu", "xatu", "girafarig", "espeon", "hypno",
-    "ralts", "kirlia", "gardevoir", "sableye", "shuppet", "banette", "duskull", "dusclops",
-    "glameow", "finneon", "chandelure", "litwick", "lampent", "gothita", "solosis",
-    "magneton", "porygon", "staryu", "chinchou", "lanturn", "slugma", "magcargo",
-    "barboach", "feebas", "spheal", "clamperl", "shellder", "cloyster", "tentacool",
-  ]);
-  private static readonly CHARGE_POKEMON = new Set([
-    "geodude", "machop", "mankey", "pinsir", "charmander", "scyther", "onix", "snorlax",
-    "machoke", "machamp", "primeape", "rhyhorn", "rhydon", "tauros", "hitmonlee",
-    "hitmonchan", "hitmontop", "tyrogue", "kangaskhan", "heracross", "ursaring",
-    "donphan", "makuhita", "hariyama", "aggron", "lairon", "aron", "breloom",
-    "cranidos", "hippopotas", "garchomp", "gabite", "gible", "excadrill", "drilbur",
-    "darmanitan", "darumaka", "haxorus", "axew", "fraxure", "timburr", "mienfoo",
-    "druddigon", "mamoswine", "gallade", "lucario", "riolu", "croagunk",
-  ]);
-
-  private static getBehavior(key: string): EnemyBehavior {
-    if (GameScene.SWARM_POKEMON.has(key)) return "swarm";
-    if (GameScene.CIRCLE_POKEMON.has(key)) return "circle";
-    if (GameScene.RANGED_POKEMON.has(key)) return "ranged";
-    if (GameScene.CHARGE_POKEMON.has(key)) return "charge";
-    return "chase";
-  }
-
-  private spawnEnemy(elapsed: number): void {
-    if (this.enemies.length >= MAX_ENEMIES) return;
-
-    // Spawn around player at screen edge
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 280 + Math.random() * 100;
-    const ex = this.ace.sprite.x + Math.cos(angle) * dist;
-    const ey = this.ace.sprite.y + Math.sin(angle) * dist;
-
-    // Scale with time + cycle number
-    const tier = elapsed < 45 ? 0 : elapsed < 90 ? 1 : elapsed < 150 ? 2 : elapsed < 220 ? 3 : 4;
-    const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
-    const hpMult = (1 + tier * 0.8 + elapsed * 0.01) * cycleMult;
-    const spdMult = (1 + tier * 0.2) * Math.min(cycleMult, 1.5);
-
-    // Pick enemy pokemon based on tier
-    const pool = GameScene.ENEMY_POOL[tier] ?? GameScene.ENEMY_POOL[0];
-    const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
-    const pmdTexKey = pacTexKey(pokemonKey);
-    const usePmd = this.textures.exists(pmdTexKey);
-    const fallbackTex = tier >= 2 ? "enemy-elite" : "enemy";
-
-    const sprite = this.physics.add.sprite(ex, ey, usePmd ? pmdTexKey : fallbackTex).setDepth(5);
-    this.enemyGroup.add(sprite);
-
-    if (usePmd) {
-      sprite.play(`${pokemonKey}-walk-down`);
-      // Tint enemies slightly red so they're distinguishable from allies
-      sprite.setTint(0xff8888);
-    }
-
-    // Spawn-in animation: scale from 0 → 1
-    sprite.setScale(0);
-    this.tweens.add({
-      targets: sprite,
-      scaleX: usePmd ? 1 : 1,
-      scaleY: usePmd ? 1 : 1,
-      duration: 250,
-      ease: "Back.easeOut",
-    });
-
-    const hpBarGfx = this.add.graphics().setDepth(6);
-
-    // Assign behavior based on pokemon type/nature
-    const behavior = GameScene.getBehavior(pokemonKey);
-
-    // Elite chance: scales with wave number and cycle
-    const eliteChance = Math.min(0.5, 0.15 + this.waveNumber * 0.01 + (this.cycleNumber - 1) * 0.05);
-    const isElite = this.waveNumber >= 3 && Math.random() < eliteChance;
-
-    const eliteMult = isElite ? 2.5 : 1;
-    const baseHp = Math.round(15 * hpMult * eliteMult);
-
-    if (isElite) {
-      sprite.setTint(0xffaa00); // Gold tint for elites
-      // Scale up elite sprite
-      this.tweens.killTweensOf(sprite);
-      sprite.setScale(0);
-      this.tweens.add({
-        targets: sprite,
-        scaleX: 1.4,
-        scaleY: 1.4,
-        duration: 300,
-        ease: "Back.easeOut",
-      });
-    }
-
-    const enemy: EnemyData = {
-      sprite,
-      pokemonKey,
-      hp: baseHp,
-      maxHp: baseHp,
-      atk: Math.round((5 + tier * 3 + elapsed * 0.02) * cycleMult * (isElite ? 1.8 : 1)),
-      speed: (40 + Math.random() * 30) * spdMult * (isElite ? 1.2 : 1),
-      hpBar: hpBarGfx,
-      behavior,
-      orbitAngle: behavior === "circle" ? Math.random() * Math.PI * 2 : undefined,
-      chargeTimer: behavior === "charge" ? 3000 + Math.random() * 2000 : undefined,
-      isCharging: false,
-      isElite,
-      lastRangedAttack: behavior === "ranged" ? 0 : undefined,
-    };
-    this.enemies.push(enemy);
+  private resumeGame(): void {
+    this.manualPause = false;
+    this.isPaused = false;
+    this.pauseContainer.setVisible(false);
+    this.pauseContainer.removeAll(true);
   }
 
   // ================================================================
-  // ENEMY AI
+  // DEATH
   // ================================================================
-
-  private updateEnemies(dt: number): void {
-    const ax = this.ace.sprite.x;
-    const ay = this.ace.sprite.y;
-    const dtMs = dt * 1000;
-
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const e = this.enemies[i];
-      if (!e.sprite.active) {
-        this.cleanupEnemy(i);
-        continue;
-      }
-
-      const dx = ax - e.sprite.x;
-      const dy = ay - e.sprite.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      // -- Behavior-based movement --
-      switch (e.behavior) {
-        case "chase":
-        default:
-          // Direct pursuit
-          if (dist > 1) {
-            e.sprite.setVelocity(
-              (dx / dist) * e.speed,
-              (dy / dist) * e.speed,
-            );
-          }
-          break;
-
-        case "circle": {
-          // Orbit around player, gradually closing in
-          const orbitRadius = Math.max(80, dist * 0.95);
-          e.orbitAngle = (e.orbitAngle ?? 0) + 1.5 * dt;
-          const targetX = ax + Math.cos(e.orbitAngle) * orbitRadius;
-          const targetY = ay + Math.sin(e.orbitAngle) * orbitRadius;
-          const tdx = targetX - e.sprite.x;
-          const tdy = targetY - e.sprite.y;
-          const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
-          if (tdist > 1) {
-            e.sprite.setVelocity(
-              (tdx / tdist) * e.speed * 1.2,
-              (tdy / tdist) * e.speed * 1.2,
-            );
-          }
-          break;
-        }
-
-        case "charge": {
-          // Wait at distance, then dash at player
-          if (!e.isCharging) {
-            e.chargeTimer = (e.chargeTimer ?? 2000) - dtMs;
-            // Idle/slow approach
-            if (dist > 120) {
-              e.sprite.setVelocity(
-                (dx / dist) * e.speed * 0.3,
-                (dy / dist) * e.speed * 0.3,
-              );
-            } else {
-              e.sprite.setVelocity(0, 0);
-            }
-            // Flash white before charging
-            if ((e.chargeTimer ?? 0) < 400 && (e.chargeTimer ?? 0) > 0) {
-              e.sprite.setTint(0xffffff);
-            }
-            if ((e.chargeTimer ?? 0) <= 0) {
-              e.isCharging = true;
-              e.chargeTimer = 800; // Charge duration
-              e.sprite.setTint(0xff4444);
-              // Dash toward player's current position
-              if (dist > 1) {
-                e.sprite.setVelocity(
-                  (dx / dist) * e.speed * 3.5,
-                  (dy / dist) * e.speed * 3.5,
-                );
-              }
-            }
-          } else {
-            // Currently charging — maintain velocity, count down
-            e.chargeTimer = (e.chargeTimer ?? 0) - dtMs;
-            if ((e.chargeTimer ?? 0) <= 0) {
-              e.isCharging = false;
-              e.chargeTimer = 2500 + Math.random() * 1500;
-              e.sprite.setTint(0xff8888); // Restore enemy tint
-              e.sprite.setVelocity(0, 0);
-            }
-          }
-          break;
-        }
-
-        case "ranged": {
-          // Stay at distance and fire projectiles at player
-          const preferredDist = 120;
-          if (dist < preferredDist - 20) {
-            // Retreat
-            e.sprite.setVelocity(
-              -(dx / dist) * e.speed * 0.6,
-              -(dy / dist) * e.speed * 0.6,
-            );
-          } else if (dist > preferredDist + 40) {
-            // Approach
-            e.sprite.setVelocity(
-              (dx / dist) * e.speed * 0.5,
-              (dy / dist) * e.speed * 0.5,
-            );
-          } else {
-            // In range — strafe slightly
-            e.sprite.setVelocity(
-              -(dy / dist) * e.speed * 0.3,
-              (dx / dist) * e.speed * 0.3,
-            );
-          }
-          // Fire projectile every 2 seconds
-          const now = this.time.now;
-          if (now - (e.lastRangedAttack ?? 0) > 2000) {
-            e.lastRangedAttack = now;
-            this.fireEnemyProjectile(e);
-          }
-          break;
-        }
-
-        case "swarm": {
-          // Group toward nearest swarm ally, then chase as pack
-          let nearestSwarmDx = 0;
-          let nearestSwarmDy = 0;
-          let nearestSwarmDist = Infinity;
-          for (const other of this.enemies) {
-            if (other === e || other.behavior !== "swarm" || !other.sprite.active) continue;
-            const sdx = other.sprite.x - e.sprite.x;
-            const sdy = other.sprite.y - e.sprite.y;
-            const sd = Math.sqrt(sdx * sdx + sdy * sdy);
-            if (sd < nearestSwarmDist && sd > 5) {
-              nearestSwarmDist = sd;
-              nearestSwarmDx = sdx;
-              nearestSwarmDy = sdy;
-            }
-          }
-          // Blend: chase player + cluster toward nearest ally
-          let vx = 0;
-          let vy = 0;
-          if (dist > 1) {
-            vx = (dx / dist) * e.speed;
-            vy = (dy / dist) * e.speed;
-          }
-          // If ally is nearby but not too close, group up
-          if (nearestSwarmDist < 150 && nearestSwarmDist > 25) {
-            vx += (nearestSwarmDx / nearestSwarmDist) * e.speed * 0.4;
-            vy += (nearestSwarmDy / nearestSwarmDist) * e.speed * 0.4;
-          }
-          e.sprite.setVelocity(vx, vy);
-          break;
-        }
-      }
-
-      // Touch damage to player
-      if (dist < 20) {
-        this.damageAce(e.atk * 0.016); // Per frame damage (~60fps)
-      }
-
-      // Draw HP bar above enemy
-      e.hpBar.clear();
-      if (e.hp < e.maxHp) {
-        const bw = e.isElite ? 26 : 20;
-        const bx = e.sprite.x - bw / 2;
-        const by = e.sprite.y - (e.isElite ? 20 : 16);
-        e.hpBar.fillStyle(0x333333, 0.8);
-        e.hpBar.fillRect(bx, by, bw, e.isElite ? 4 : 3);
-        e.hpBar.fillStyle(e.isElite ? 0xffaa00 : COLORS.hpRed, 1);
-        e.hpBar.fillRect(bx, by, bw * (e.hp / e.maxHp), e.isElite ? 4 : 3);
-      }
-
-      // Remove if too far from player
-      if (dist > 600) {
-        this.cleanupEnemy(i);
-      }
-    }
-  }
-
-  private cleanupEnemy(index: number): void {
-    const e = this.enemies[index];
-    e.sprite.destroy();
-    e.hpBar.destroy();
-    this.enemies.splice(index, 1);
-  }
-
-  // ================================================================
-  // ENEMY PROJECTILES
-  // ================================================================
-
-  private fireEnemyProjectile(enemy: EnemyData): void {
-    const ax = this.ace.sprite.x;
-    const ay = this.ace.sprite.y;
-    const dx = ax - enemy.sprite.x;
-    const dy = ay - enemy.sprite.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 1) return;
-
-    const sprite = this.add.sprite(enemy.sprite.x, enemy.sprite.y, "projectile").setDepth(7);
-    sprite.setTint(0xff4444);
-    sprite.setScale(1.2);
-
-    const speed = 120;
-    const vx = (dx / dist) * speed;
-    const vy = (dy / dist) * speed;
-    this.enemyProjectiles.push({ sprite, vx, vy, damage: enemy.atk * 0.5 });
-  }
-
-  private updateEnemyProjectiles(dt: number): void {
-    for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
-      const ep = this.enemyProjectiles[i];
-      ep.sprite.x += ep.vx * dt;
-      ep.sprite.y += ep.vy * dt;
-
-      // Check distance from ace
-      const dx = ep.sprite.x - this.ace.sprite.x;
-      const dy = ep.sprite.y - this.ace.sprite.y;
-      if (dx * dx + dy * dy < 400) { // 20px radius
-        this.damageAce(ep.damage);
-        ep.sprite.destroy();
-        this.enemyProjectiles.splice(i, 1);
-        continue;
-      }
-
-      // Remove if too far from player
-      if (Math.abs(dx) > 500 || Math.abs(dy) > 600) {
-        ep.sprite.destroy();
-        this.enemyProjectiles.splice(i, 1);
-      }
-    }
-  }
-
-  // ================================================================
-  // AUTO-ATTACK
-  // ================================================================
-
-  private updateAceAutoAttack(): void {
-    const now = this.time.now;
-
-    // Draw aim indicator to nearest enemy
-    this.aimGfx.clear();
-    const aimTarget = this.findNearestEnemy(this.ace.sprite.x, this.ace.sprite.y, this.ace.attackRange);
-    if (aimTarget) {
-      this.aimGfx.lineStyle(1, 0xfbbf24, 0.2);
-      this.aimGfx.lineBetween(this.ace.sprite.x, this.ace.sprite.y, aimTarget.sprite.x, aimTarget.sprite.y);
-    }
-
-    if (now - this.ace.lastAttackTime < this.ace.attackCooldown) return;
-
-    // Find nearest enemy
-    const target = aimTarget;
-    if (!target) return;
-
-    this.ace.lastAttackTime = now;
-    sfx.playHit();
-
-    // Multi-shot based on level: 1 at base, 3 at Lv7, 5 at Lv15
-    const shotCount = this.level >= 15 ? 5 : this.level >= 7 ? 3 : 1;
-    const baseAngle = Math.atan2(
-      target.sprite.y - this.ace.sprite.y,
-      target.sprite.x - this.ace.sprite.x,
-    );
-    const spread = 0.2; // ~11 degrees spread per shot
-
-    for (let s = 0; s < shotCount; s++) {
-      const offset = (s - (shotCount - 1) / 2) * spread;
-      const angle = baseAngle + offset;
-      const dist = 200;
-      this.fireProjectile(
-        this.ace.sprite.x,
-        this.ace.sprite.y,
-        this.ace.sprite.x + Math.cos(angle) * dist,
-        this.ace.sprite.y + Math.sin(angle) * dist,
-        Math.floor(this.ace.atk / (shotCount > 1 ? shotCount * 0.6 : 1)),
-      );
-    }
-  }
-
-  private findNearestEnemy(
-    x: number,
-    y: number,
-    range: number,
-  ): EnemyData | null {
-    let best: EnemyData | null = null;
-    let bestDist = range;
-    for (const e of this.enemies) {
-      const d = Phaser.Math.Distance.Between(x, y, e.sprite.x, e.sprite.y);
-      if (d < bestDist) {
-        bestDist = d;
-        best = e;
-      }
-    }
-    return best;
-  }
-
-  // ================================================================
-  // PROJECTILES
-  // ================================================================
-
-  private fireProjectile(
-    fromX: number,
-    fromY: number,
-    toX: number,
-    toY: number,
-    damage: number,
-  ): void {
-    if (this.projectiles.length >= MAX_PROJECTILES) {
-      const old = this.projectiles.shift()!;
-      old.sprite.destroy();
-    }
-
-    // Determine attack type from starter pokemon
-    const atkType: AttackType = STARTER_ATTACK_TYPE[this.starterKey] ?? "NORMAL";
-
-    // Use spritesheet-based range animation if available
-    const rangeTex = getRangeTextureKey(atkType);
-    const rangeAnim = getRangeAnimKey(atkType);
-    const useEffect = rangeTex !== null && rangeAnim !== null
-      && this.textures.exists(rangeTex) && this.anims.exists(rangeAnim);
-
-    const sprite = this.physics.add
-      .sprite(fromX, fromY, useEffect ? rangeTex! : "projectile")
-      .setDepth(8);
-    if (useEffect) {
-      sprite.play(rangeAnim!);
-      sprite.setScale(1.5);
-    }
-    this.projectileGroup.add(sprite);
-
-    const angle = Math.atan2(toY - fromY, toX - fromX);
-    const speed = 300;
-    sprite.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-    sprite.setRotation(angle);
-
-    const pierce = 1 + this.aceEvoStage + (this.skillId === "sheer_force" ? 1 : 0);
-    this.projectiles.push({ sprite, damage, pierce });
-
-    // Play attack pose animation on the ace pokemon
-    this.playAttackPose(this.ace.sprite, this.starterKey, angle);
-  }
-
-  /**
-   * Play the attack pose animation on a pokemon sprite, then return to walk anim.
-   * Uses the Attack-Anim.png spritesheet loaded from PMDCollab.
-   * Always uses the base starter's attack sheet, but restores to whatever
-   * walk texture the sprite currently has (e.g. evolved form).
-   */
-  private playAttackPose(
-    sprite: Phaser.Physics.Arcade.Sprite,
-    pokemonKey: string,
-    angle: number,
-  ): void {
-    // Determine direction from angle
-    const dir = getDirectionFromVelocity(Math.cos(angle), Math.sin(angle));
-    const atkAnimKey = `${pokemonKey}-attack-${dir}`;
-    if (!this.anims.exists(atkAnimKey)) return;
-
-    // Save current walk anim to restore after attack
-    // No texture swap needed — attack frames are in the same atlas!
-    const savedWalkAnim = sprite.anims.currentAnim?.key;
-
-    sprite.play(atkAnimKey);
-    sprite.once("animationcomplete", () => {
-      // Check sprite is still valid (scene may have restarted)
-      if (!sprite.active) return;
-      // Restore the walk animation (same atlas, just different frames)
-      if (savedWalkAnim && this.anims.exists(savedWalkAnim)) {
-        sprite.play(savedWalkAnim);
-      }
-    });
-  }
-
-  private updateProjectiles(_dt: number): void {
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i];
-      if (!p.sprite.active) {
-        p.sprite.destroy();
-        this.projectiles.splice(i, 1);
-        continue;
-      }
-
-      // Remove if off-screen
-      const dx = p.sprite.x - this.ace.sprite.x;
-      const dy = p.sprite.y - this.ace.sprite.y;
-      if (Math.abs(dx) > 400 || Math.abs(dy) > 500) {
-        p.sprite.destroy();
-        this.projectiles.splice(i, 1);
-      }
-    }
-  }
-
-  private onProjectileHitEnemy(proj: ProjectileData, enemy: EnemyData): void {
-    // Critical hit check — Inner Focus: 3x crit instead of 2x
-    const isCrit = Math.random() < this.critChance;
-    const critMult = this.skillId === "inner_focus" ? 3 : 2;
-    let baseDamage = proj.damage;
-
-    // Blaze: +30% ATK when HP below 30%
-    if (this.skillId === "blaze" && this.ace.hp < this.ace.maxHp * 0.3) {
-      baseDamage = Math.floor(baseDamage * 1.3);
-    }
-
-    // Flash Fire: stacking ATK bonus
-    if (this.skillId === "flash_fire" && this.flashFireStacks > 0) {
-      baseDamage = Math.floor(baseDamage * (1 + this.flashFireStacks * 0.01));
-    }
-
-    const finalDamage = isCrit ? baseDamage * critMult : baseDamage;
-
-    enemy.hp -= finalDamage;
-    proj.pierce--;
-    sfx.playHit();
-
-    // Play type-based hit effect
-    const atkType: AttackType = STARTER_ATTACK_TYPE[this.starterKey] ?? "NORMAL";
-    playHitEffect(this, enemy.sprite.x, enemy.sprite.y, atkType);
-
-    // Lifesteal
-    if (this.lifestealRate > 0 && this.ace.hp < this.ace.maxHp) {
-      const heal = Math.ceil(finalDamage * this.lifestealRate);
-      this.ace.hp = Math.min(this.ace.maxHp, this.ace.hp + heal);
-    }
-
-    // Static: 10% chance to slow enemy for 2 seconds
-    if (this.skillId === "static" && Math.random() < 0.1) {
-      const origSpeed = enemy.speed;
-      enemy.speed = Math.floor(enemy.speed * 0.4);
-      enemy.sprite.setTint(0xffff00);
-      this.time.delayedCall(2000, () => {
-        if (enemy.sprite.active) {
-          enemy.speed = origSpeed;
-          enemy.sprite.clearTint();
-        }
-      });
-    }
-
-    // Damage popup (gold for normal, red for crit)
-    this.showDamagePopup(enemy.sprite.x, enemy.sprite.y, isCrit ? `${Math.ceil(finalDamage)} CRIT!` : finalDamage, isCrit ? "#ff4444" : "#fbbf24");
-
-    // Flash enemy white
-    enemy.sprite.setTint(0xffffff);
-    this.time.delayedCall(80, () => {
-      if (enemy.sprite.active) enemy.sprite.setTint(0xff8888);
-    });
-
-    if (proj.pierce <= 0) {
-      proj.sprite.destroy();
-      const idx = this.projectiles.indexOf(proj);
-      if (idx >= 0) this.projectiles.splice(idx, 1);
-    }
-
-    if (enemy.hp <= 0) {
-      this.onEnemyDeath(enemy);
-    }
-  }
-
-  private onEnemyDeath(enemy: EnemyData): void {
-    this.kills++;
-    this.killStreak++;
-    this.lastKillTime = this.time.now;
-
-    // Flash Fire: +1% ATK per kill (max 30%)
-    if (this.skillId === "flash_fire" && this.flashFireStacks < 30) {
-      this.flashFireStacks++;
-    }
-
-    // Unburden: speed +50% for 3s after defeating enemy
-    if (this.skillId === "unburden") {
-      if (this.unburdenTimer <= 0) {
-        this.ace.speed = Math.floor(this.ace.speed * 1.5);
-      }
-      this.unburdenTimer = 3; // refresh timer
-    }
-
-    // Check if this was the boss
-    const wasBoss = enemy === this.boss;
-
-    // Death particles
-    this.spawnDeathParticles(enemy.sprite.x, enemy.sprite.y, wasBoss);
-
-    // Camera shake (stronger for boss/elite)
-    if (wasBoss) {
-      this.cameras.main.shake(300, 0.015);
-    } else if (enemy.isElite) {
-      this.cameras.main.shake(100, 0.006);
-    } else if (this.killStreak >= 5) {
-      this.cameras.main.shake(50, 0.003);
-    }
-
-    // Kill streak text
-    if (this.killStreak >= 10 && this.killStreak % 5 === 0) {
-      this.showStreakText(this.killStreak);
-    }
-
-    // Spawn XP gem (boss/elite drop more)
-    const xpValue = wasBoss
-      ? 50 + this.cycleNumber * 20
-      : enemy.isElite
-        ? 10 + Math.floor(enemy.maxHp / 5)
-        : 3 + Math.floor(enemy.maxHp / 10);
-    this.spawnXpGem(enemy.sprite.x, enemy.sprite.y, xpValue);
-
-    // Random item drop (8% normal, 40% elite, 100% boss)
-    const dropChance = wasBoss ? 1 : enemy.isElite ? 0.4 : 0.08;
-    if (Math.random() < dropChance) {
-      this.spawnItem(enemy.sprite.x, enemy.sprite.y);
-    }
-
-    // Cleanup
-    const idx = this.enemies.indexOf(enemy);
-    if (idx >= 0) this.cleanupEnemy(idx);
-
-    // Trigger boss defeated sequence
-    if (wasBoss) {
-      this.onBossDefeated();
-    }
-  }
-
-  // ================================================================
-  // XP & LEVELING
-  // ================================================================
-
-  private spawnXpGem(x: number, y: number, value: number): void {
-    const sprite = this.physics.add.sprite(x, y, "xp-gem").setDepth(3);
-    this.xpGemGroup.add(sprite);
-    sprite.body!.setCircle(16); // Larger pickup radius
-    this.xpGems.push({ sprite, value });
-  }
-
-  private updateXpGemMagnet(): void {
-    const magnetRange = this.xpMagnetRange + this.level * 5;
-    const magnetSpeed = 200 + this.level * 10;
-    const ax = this.ace.sprite.x;
-    const ay = this.ace.sprite.y;
-
-    for (let i = this.xpGems.length - 1; i >= 0; i--) {
-      const gem = this.xpGems[i];
-      if (!gem.sprite.active) {
-        gem.sprite.destroy();
-        this.xpGems.splice(i, 1);
-        continue;
-      }
-
-      const dist = Phaser.Math.Distance.Between(
-        ax,
-        ay,
-        gem.sprite.x,
-        gem.sprite.y,
-      );
-
-      if (dist < magnetRange || gem.magnetized) {
-        // Once magnetized, keep pulling until collected
-        gem.magnetized = true;
-        const angle = Math.atan2(ay - gem.sprite.y, ax - gem.sprite.x);
-        gem.sprite.setVelocity(
-          Math.cos(angle) * magnetSpeed,
-          Math.sin(angle) * magnetSpeed,
-        );
-      }
-    }
-  }
-
-  private collectXpGem(gem: XpGem): void {
-    sfx.playPickup();
-    this.xp += gem.value;
-    gem.sprite.destroy();
-    const idx = this.xpGems.indexOf(gem);
-    if (idx >= 0) this.xpGems.splice(idx, 1);
-
-    // Check level up
-    while (this.xp >= this.xpToNext) {
-      this.xp -= this.xpToNext;
-      this.level++;
-      this.xpToNext = Math.floor(XP_PER_LEVEL_BASE * Math.pow(XP_LEVEL_SCALE, this.level - 1));
-      this.onLevelUp();
-    }
-  }
-
-  // ================================================================
-  // ITEM DROPS
-  // ================================================================
-
-  private spawnItem(x: number, y: number): void {
-    const types: ItemType[] = ["heal", "bomb", "magnet"];
-    const weights = [0.5, 0.25, 0.25]; // heal more common
-    let r = Math.random();
-    let type: ItemType = "heal";
-    for (let i = 0; i < types.length; i++) {
-      r -= weights[i];
-      if (r <= 0) { type = types[i]; break; }
-    }
-
-    const texKey = `item-${type}`;
-    const sprite = this.physics.add.sprite(x, y, texKey).setDepth(4);
-    this.itemGroup.add(sprite);
-    sprite.body!.setCircle(12);
-
-    // Bounce-in animation
-    sprite.setScale(0);
-    this.tweens.add({
-      targets: sprite,
-      scaleX: 1.5, scaleY: 1.5,
-      duration: 200,
-      ease: "Back.easeOut",
-      onComplete: () => {
-        if (sprite.active) {
-          this.tweens.add({
-            targets: sprite,
-            scaleX: 1, scaleY: 1,
-            duration: 150,
-          });
-        }
-      },
-    });
-
-    this.items.push({ sprite, type, ttl: 10000 }); // 10 second lifetime
-  }
-
-  private updateItems(dt: number): void {
-    const ax = this.ace.sprite.x;
-    const ay = this.ace.sprite.y;
-
-    for (let i = this.items.length - 1; i >= 0; i--) {
-      const item = this.items[i];
-      if (!item.sprite.active) {
-        item.sprite.destroy();
-        this.items.splice(i, 1);
-        continue;
-      }
-
-      item.ttl -= dt * 1000;
-
-      // Blink when about to expire
-      if (item.ttl < 3000) {
-        item.sprite.setAlpha(Math.sin(this.time.now * 0.01) * 0.3 + 0.7);
-      }
-
-      // Despawn
-      if (item.ttl <= 0) {
-        item.sprite.destroy();
-        this.items.splice(i, 1);
-        continue;
-      }
-
-      // Pickup check
-      const dist = Phaser.Math.Distance.Between(ax, ay, item.sprite.x, item.sprite.y);
-      if (dist < 24) {
-        this.collectItem(item);
-        this.items.splice(i, 1);
-      }
-    }
-  }
-
-  private collectItem(item: ItemDrop): void {
-    sfx.playPickup();
-
-    switch (item.type) {
-      case "heal": {
-        const healAmt = Math.floor(this.ace.maxHp * 0.25);
-        this.ace.hp = Math.min(this.ace.hp + healAmt, this.ace.maxHp);
-        this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 20, `+${healAmt}`, "#44ff44");
-        break;
-      }
-      case "bomb": {
-        // Damage all enemies on screen
-        this.cameras.main.flash(150, 255, 160, 0);
-        this.cameras.main.shake(200, 0.01);
-        for (const e of this.enemies) {
-          if (!e.sprite.active) continue;
-          const dist = Phaser.Math.Distance.Between(
-            this.ace.sprite.x, this.ace.sprite.y,
-            e.sprite.x, e.sprite.y,
-          );
-          if (dist < 300) {
-            e.hp -= Math.floor(e.maxHp * 0.5);
-            e.sprite.setTint(0xffffff);
-            this.time.delayedCall(100, () => {
-              if (e.sprite.active) e.sprite.setTint(0xff8888);
-            });
-            if (e.hp <= 0) {
-              this.onEnemyDeath(e);
-            }
-          }
-        }
-        this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 30, "BOOM!", "#ff6600");
-        break;
-      }
-      case "magnet": {
-        // Pull all XP gems to player instantly
-        for (const gem of this.xpGems) {
-          if (!gem.sprite.active) continue;
-          const angle = Math.atan2(
-            this.ace.sprite.y - gem.sprite.y,
-            this.ace.sprite.x - gem.sprite.x,
-          );
-          gem.sprite.setVelocity(
-            Math.cos(angle) * 600,
-            Math.sin(angle) * 600,
-          );
-        }
-        this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 30, "MAGNET!", "#66ccff");
-        break;
-      }
-    }
-
-    item.sprite.destroy();
-  }
-
-  private onLevelUp(): void {
-    // Always grant small passive stat boost
-    this.ace.attackRange += 3;
-    if (this.ace.attackCooldown > 350) this.ace.attackCooldown -= 15;
-
-    // Camera flash on level up
-    this.cameras.main.flash(200, 255, 255, 255);
-
-    // Show selection UI for meaningful choices
-    sfx.playLevelUp();
-    this.showLevelUpSelection();
-  }
-
-  private evolveAce(): void {
-    const chain = EVOLUTION_CHAINS[this.ace.pokemonKey];
-    if (!chain || this.aceEvoStage >= chain.length - 1) return;
-
-    this.aceEvoStage++;
-    const stage = chain[this.aceEvoStage];
-
-    // Apply stat multipliers (relative to base stage)
-    const prevStage = chain[this.aceEvoStage - 1];
-    const atkBoost = stage.atkMult / prevStage.atkMult;
-    const hpBoost = stage.hpMult / prevStage.hpMult;
-    const spdBoost = stage.speedMult / prevStage.speedMult;
-
-    this.ace.atk = Math.floor(this.ace.atk * atkBoost);
-    this.ace.maxHp = Math.floor(this.ace.maxHp * hpBoost);
-    this.ace.hp = this.ace.maxHp; // Full heal on evolution
-    this.ace.speed = Math.floor(this.ace.speed * spdBoost);
-    this.ace.attackCooldown = Math.max(200, Math.floor(this.ace.attackCooldown * (1 / spdBoost)));
-
-    // Change sprite to evolved form
-    const newTexKey = pacTexKey(stage.spriteKey);
-    if (this.textures.exists(newTexKey)) {
-      // Stop any playing animation first to prevent callbacks from restoring old texture
-      this.ace.sprite.stop();
-      this.ace.sprite.removeAllListeners("animationcomplete");
-      // Set texture to new atlas with first walk frame
-      this.ace.sprite.setTexture(newTexKey, "Normal/Walk/Anim/0/0000");
-      // Play walk-down animation for the new sprite
-      const walkAnim = `${stage.spriteKey}-walk-down`;
-      if (this.anims.exists(walkAnim)) {
-        this.ace.sprite.play(walkAnim);
-      }
-      // Update pokemonKey so future lookups reference evolved form
-      this.ace.pokemonKey = stage.spriteKey;
-    }
-    this.ace.sprite.setScale(stage.scale);
-
-    // Evolution flash effect
-    this.cameras.main.flash(500, 255, 0, 255);
-    this.cameras.main.shake(300, 0.01);
-
-    // Particle burst
-    this.spawnDeathParticles(this.ace.sprite.x, this.ace.sprite.y, true);
-
-    // Show evolution text
-    const txt = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `★ ${stage.name} ★`, {
-        fontFamily: "monospace",
-        fontSize: "22px",
-        color: "#ff00ff",
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(300)
-      .setScrollFactor(0);
-
-    this.tweens.add({
-      targets: txt,
-      y: txt.y - 50,
-      alpha: 0,
-      duration: 2500,
-      ease: "Cubic.easeOut",
-      onComplete: () => txt.destroy(),
-    });
-  }
-
-  private evolveCompanion(companion: CompanionData): void {
-    const chain = EVOLUTION_CHAINS[companion.sprite.texture.key.replace("pac-", "")];
-    const currentStage = this.companionEvoStages.get(companion.sprite.texture.key) ?? 0;
-    if (!chain || currentStage >= chain.length - 1) return;
-
-    const nextStage = currentStage + 1;
-    this.companionEvoStages.set(companion.sprite.texture.key, nextStage);
-
-    const stage = chain[nextStage];
-    const prevStage = chain[currentStage];
-    companion.atk = Math.floor(companion.atk * (stage.atkMult / prevStage.atkMult));
-    companion.sprite.setScale(stage.scale);
-
-    this.spawnDeathParticles(companion.sprite.x, companion.sprite.y, false);
-  }
-
-  // ================================================================
-  // COMPANIONS
-  // ================================================================
-
-  /** Companion pokemon pool: key → attack type */
-  private static readonly COMPANION_POOL: { key: string; type: "projectile" | "orbital" | "area" }[] = [
-    { key: "squirtle", type: "projectile" },
-    { key: "gastly", type: "orbital" },
-    { key: "geodude", type: "area" },
-    { key: "charmander", type: "projectile" },
-    { key: "bulbasaur", type: "area" },
-  ];
-
-  private addCompanion(): void {
-    if (this.companions.length >= 5) return;
-
-    const pool = GameScene.COMPANION_POOL[this.companions.length % GameScene.COMPANION_POOL.length];
-    const type = pool.type;
-    const pokemonKey = pool.key;
-    const pmdTexKey = pacTexKey(pokemonKey);
-    const usePmd = this.textures.exists(pmdTexKey);
-
-    const sprite = this.physics.add
-      .sprite(this.ace.sprite.x, this.ace.sprite.y - 30, usePmd ? pmdTexKey : "companion")
-      .setDepth(9);
-
-    if (usePmd) {
-      sprite.play(`${pokemonKey}-walk-down`);
-      sprite.setScale(1.2);
-    }
-
-    const companion: CompanionData = {
-      sprite,
-      atk: 5 + this.level * 2,
-      attackCooldown: type === "orbital" ? 200 : type === "area" ? 2000 : 1200,
-      lastAttackTime: 0,
-      attackRange: type === "orbital" ? 30 : type === "area" ? 80 : 150,
-      orbitAngle: (this.companions.length * Math.PI * 2) / 3,
-      type,
-      level: 1,
-    };
-
-    this.companions.push(companion);
-
-    // Announce
-    const names = POKEMON_SPRITES[pokemonKey]?.name
-      ? [POKEMON_SPRITES.squirtle.name, POKEMON_SPRITES.gastly.name, POKEMON_SPRITES.geodude.name]
-      : ["Squirtle", "Gastly", "Geodude"];
-    const txt = this.add
-      .text(
-        GAME_WIDTH / 2,
-        GAME_HEIGHT / 2 + 20,
-        `+ ${names[this.companions.length - 1] ?? "Companion"} joined!`,
-        {
-          fontFamily: "monospace",
-          fontSize: "16px",
-          color: "#00ddff",
-          stroke: "#000",
-          strokeThickness: 2,
-        },
-      )
-      .setOrigin(0.5)
-      .setDepth(201)
-      .setScrollFactor(0);
-
-    this.tweens.add({
-      targets: txt,
-      y: txt.y - 30,
-      alpha: 0,
-      duration: 1500,
-      onComplete: () => txt.destroy(),
-    });
-  }
-
-  private updateCompanions(dt: number): void {
-    const now = this.time.now;
-
-    for (const c of this.companions) {
-      // Orbit around ace
-      c.orbitAngle += dt * (c.type === "orbital" ? 3.0 : 1.5);
-      const orbitDist = c.type === "orbital" ? 35 : 50;
-      c.sprite.setPosition(
-        this.ace.sprite.x + Math.cos(c.orbitAngle) * orbitDist,
-        this.ace.sprite.y + Math.sin(c.orbitAngle) * orbitDist,
-      );
-
-      // Attack
-      if (now - c.lastAttackTime < c.attackCooldown) continue;
-
-      if (c.type === "orbital") {
-        // Orbital: damage nearby enemies on contact
-        for (const e of this.enemies) {
-          const d = Phaser.Math.Distance.Between(
-            c.sprite.x,
-            c.sprite.y,
-            e.sprite.x,
-            e.sprite.y,
-          );
-          if (d < c.attackRange) {
-            e.hp -= c.atk;
-            this.showDamagePopup(e.sprite.x, e.sprite.y, c.atk, "#c084fc");
-            e.sprite.setTint(0xff88ff);
-            this.time.delayedCall(60, () => {
-              if (e.sprite.active) e.sprite.setTint(0xff8888);
-            });
-            if (e.hp <= 0) this.onEnemyDeath(e);
-            c.lastAttackTime = now;
-            break;
-          }
-        }
-      } else if (c.type === "projectile") {
-        // Projectile: fire at nearest enemy
-        const target = this.findNearestEnemy(
-          c.sprite.x,
-          c.sprite.y,
-          c.attackRange,
-        );
-        if (target) {
-          c.lastAttackTime = now;
-          this.fireProjectile(
-            c.sprite.x,
-            c.sprite.y,
-            target.sprite.x,
-            target.sprite.y,
-            c.atk,
-          );
-        }
-      } else if (c.type === "area") {
-        // Area: damage all enemies in range
-        c.lastAttackTime = now;
-        let hit = false;
-        for (const e of this.enemies) {
-          const d = Phaser.Math.Distance.Between(
-            c.sprite.x,
-            c.sprite.y,
-            e.sprite.x,
-            e.sprite.y,
-          );
-          if (d < c.attackRange) {
-            e.hp -= c.atk;
-            this.showDamagePopup(e.sprite.x, e.sprite.y, c.atk, "#4ade80");
-            if (e.hp <= 0) this.onEnemyDeath(e);
-            hit = true;
-          }
-        }
-        if (hit) {
-          // Visual: expanding ring
-          const ring = this.add.circle(
-            c.sprite.x,
-            c.sprite.y,
-            5,
-            COLORS.accent3,
-            0.4,
-          ).setDepth(7);
-          this.tweens.add({
-            targets: ring,
-            radius: c.attackRange,
-            alpha: 0,
-            duration: 300,
-            onComplete: () => ring.destroy(),
-          });
-        }
-      }
-    }
-  }
-
-  // ================================================================
-  // LEGIONS (past parties auto-fighting)
-  // ================================================================
-
-  private updateLegions(dt: number): void {
-    const now = this.time.now;
-    const ax = this.ace.sprite.x;
-    const ay = this.ace.sprite.y;
-
-    for (const legion of this.legionEntities) {
-      // Orbit around the ace
-      legion.orbitAngle += dt * 0.8;
-      const lx = ax + Math.cos(legion.orbitAngle) * legion.orbitDist;
-      const ly = ay + Math.sin(legion.orbitAngle) * legion.orbitDist;
-
-      // Clamp to world bounds
-      const clampX = Phaser.Math.Clamp(lx, 0, WORLD_WIDTH);
-      const clampY = Phaser.Math.Clamp(ly, 0, WORLD_HEIGHT);
-
-      // Draw legion — LOD based on index
-      legion.gfx.clear();
-      const color = legion.data.color;
-      const memberCount = 1 + legion.data.companions.length;
-
-      if (this.legionEntities.indexOf(legion) < 3) {
-        // Tier 1 LOD: Individual circles for ace + companions
-        const aceR = 8;
-        legion.gfx.fillStyle(color, 0.6);
-        legion.gfx.fillCircle(clampX, clampY, aceR);
-
-        // Companions as smaller orbiting dots
-        for (let j = 0; j < legion.data.companions.length; j++) {
-          const ca = legion.orbitAngle * 2 + (j * Math.PI * 2) / memberCount;
-          const cx = clampX + Math.cos(ca) * 15;
-          const cy = clampY + Math.sin(ca) * 15;
-          legion.gfx.fillStyle(color, 0.4);
-          legion.gfx.fillCircle(cx, cy, 5);
-        }
-
-        // DPS aura ring
-        legion.gfx.lineStyle(1, color, 0.2);
-        legion.gfx.strokeCircle(clampX, clampY, legion.attackRange * 0.3);
-      } else {
-        // Tier 2+ LOD: Single glow blob
-        const blobR = 6 + Math.min(memberCount * 2, 10);
-        legion.gfx.fillStyle(color, 0.35);
-        legion.gfx.fillCircle(clampX, clampY, blobR);
-      }
-
-      // Auto-attack enemies in range
-      if (now - legion.lastAttackTime >= legion.attackInterval) {
-        legion.lastAttackTime = now;
-        const dmg = legion.data.dps * (legion.attackInterval / 1000);
-
-        for (const e of this.enemies) {
-          const d = Phaser.Math.Distance.Between(clampX, clampY, e.sprite.x, e.sprite.y);
-          if (d < legion.attackRange) {
-            e.hp -= dmg;
-            this.showDamagePopup(e.sprite.x, e.sprite.y, dmg, "#67e8f9");
-            // Flash enemy with legion color
-            e.sprite.setTint(color);
-            this.time.delayedCall(60, () => {
-              if (e.sprite.active) e.sprite.setTint(0xff8888);
-            });
-            if (e.hp <= 0) this.onEnemyDeath(e);
-            break; // One target per attack
-          }
-        }
-      }
-    }
-  }
-
-  // ================================================================
-  // DAMAGE
-  // ================================================================
-
-  private damageAce(amount: number): void {
-    if (this.isDodging) return; // Invincibility frames during dodge
-
-    // Levitate: phase through enemies — immune to damage
-    if (this.skillId === "levitate" && this.phaseTimer > 0) return;
-
-    // Torrent: -25% damage when HP above 70%
-    let finalAmount = amount;
-    if (this.skillId === "torrent" && this.ace.hp > this.ace.maxHp * 0.7) {
-      finalAmount = amount * 0.75;
-    }
-
-    // Leaf Guard: -15% damage when companions are active
-    if (this.skillId === "leaf_guard" && this.companions.length > 0) {
-      finalAmount *= 0.85;
-    }
-
-    this.ace.hp -= finalAmount;
-
-    // Show damage on ace (throttled via popup pool)
-    if (finalAmount >= 0.5) {
-      this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y, finalAmount, "#f43f5e");
-    }
-
-    // Levitate: trigger phase on taking damage (1s immunity)
-    if (this.skillId === "levitate" && this.phaseTimer <= 0) {
-      this.phaseTimer = 1;
-      this.ace.sprite.setAlpha(0.5);
-    }
-
-    // Sturdy: survive one fatal hit per wave
-    if (this.ace.hp <= 0 && this.skillId === "sturdy" && this.sturdyAvailable) {
-      this.ace.hp = 1;
-      this.sturdyAvailable = false;
-      this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 20, "STURDY!", "#fbbf24");
-      this.cameras.main.flash(200, 255, 200, 0);
-      return;
-    }
-
-    if (this.ace.hp <= 0) {
-      this.ace.hp = 0;
-      this.onAceDeath();
-    }
-  }
 
   private onAceDeath(): void {
     this.isPaused = true;
@@ -2645,491 +917,113 @@ export class GameScene extends Phaser.Scene {
     sfx.playDeath();
     this.saveHighScore();
 
-    const overlay = this.add.rectangle(
-      GAME_WIDTH / 2,
-      GAME_HEIGHT / 2,
-      GAME_WIDTH,
-      GAME_HEIGHT,
-      0x000000,
-      0.7,
-    ).setDepth(300).setScrollFactor(0);
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7)
+      .setDepth(300).setScrollFactor(0);
 
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30, "DEFEATED", {
-        fontFamily: "monospace",
-        fontSize: "28px",
-        color: "#f43f5e",
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(301)
-      .setScrollFactor(0);
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30, "DEFEATED", {
+      fontFamily: "monospace", fontSize: "28px", color: "#f43f5e", stroke: "#000", strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(301).setScrollFactor(0);
 
     const evoName = EVOLUTION_CHAINS[this.ace.pokemonKey]?.[this.aceEvoStage]?.name ?? this.ace.pokemonKey;
-    const totalTimeStr = this.formatTime(this.totalSurvivalTime);
-    const diffLabel = this.getDifficultyLabel();
+    const totalTimeStr = formatTime(this.totalSurvivalTime);
+    const diffLabel = getDifficultyLabel(this.cycleNumber);
     const statsLines = [
-      `${evoName}  Lv.${this.level}`,
-      ``,
+      `${evoName}  Lv.${this.level}`, "",
       `Kills: ${this.kills}    Wave: ${this.waveNumber}`,
       `Cycle: ${this.cycleNumber}    Party: ${this.companions.length + 1}`,
       `Total Time: ${totalTimeStr}`,
       diffLabel ? `Difficulty: ${diffLabel}` : "",
     ].filter(Boolean);
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 15, statsLines.join("\n"), {
-        fontFamily: "monospace",
-        fontSize: "13px",
-        color: "#ccc",
-        align: "center",
-        lineSpacing: 4,
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(301)
-      .setScrollFactor(0);
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 15, statsLines.join("\n"), {
+      fontFamily: "monospace", fontSize: "13px", color: "#ccc", align: "center", lineSpacing: 4,
+    }).setOrigin(0.5, 0).setDepth(301).setScrollFactor(0);
 
-    // High score line
     const hs = this.saveData.highScore;
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 105, `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
-        fontFamily: "monospace",
-        fontSize: "10px",
-        color: "#fbbf24",
-        align: "center",
-      })
-      .setOrigin(0.5)
-      .setDepth(301)
-      .setScrollFactor(0);
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 105,
+      `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
+      fontFamily: "monospace", fontSize: "10px", color: "#fbbf24", align: "center",
+    }).setOrigin(0.5).setDepth(301).setScrollFactor(0);
 
-    // Tap to retry
-    const retry = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140, "[ Tap to Retry ]", {
-        fontFamily: "monospace",
-        fontSize: "16px",
-        color: "#667eea",
-      })
-      .setOrigin(0.5)
-      .setDepth(301)
-      .setScrollFactor(0);
-
-    this.tweens.add({
-      targets: retry,
-      alpha: 0.3,
-      yoyo: true,
-      repeat: -1,
-      duration: 800,
-    });
-
+    const retry = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140, "[ Tap to Retry ]", {
+      fontFamily: "monospace", fontSize: "16px", color: "#667eea",
+    }).setOrigin(0.5).setDepth(301).setScrollFactor(0);
+    this.tweens.add({ targets: retry, alpha: 0.3, yoyo: true, repeat: -1, duration: 800 });
     this.input.once("pointerdown", () => {
-      // Return to title screen on death
       this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
     });
   }
 
-  private formatTime(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  }
-
-  private getDungeonName(): string {
-    const DUNGEON_NAMES = [
-      "Tiny Woods",
-      "Mt. Steel",
-      "Crystal Cave",
-      "Mystic Forest",
-      "Frosty Forest",
-      "Dark Crater",
-    ];
-    const idx = Math.min(this.cycleNumber - 1, DUNGEON_NAMES.length - 1);
-    return DUNGEON_NAMES[idx];
-  }
-
-  private getDifficultyLabel(): string {
-    if (this.cycleNumber >= 7) return "INFERNO";
-    if (this.cycleNumber >= 5) return "NIGHTMARE";
-    if (this.cycleNumber >= 3) return "HARD";
-    if (this.cycleNumber >= 2) return "NORMAL+";
-    return "";
-  }
-
   // ================================================================
-  // UI DRAW
+  // BOSS DEFEATED / CYCLE TRANSITION
   // ================================================================
-
-  private drawUI(): void {
-    // HP bar
-    this.hpBar.clear();
-    const hpW = 160;
-    const hpH = 8;
-    const hpX = 8;
-    const hpY = 8;
-    this.hpBar.fillStyle(0x333333, 0.8);
-    this.hpBar.fillRect(hpX, hpY, hpW, hpH);
-    const hpRatio = this.ace.hp / this.ace.maxHp;
-    const hpColor = hpRatio > 0.5 ? COLORS.hpGreen : hpRatio > 0.25 ? COLORS.gold : COLORS.hpRed;
-    this.hpBar.fillStyle(hpColor, 1);
-    this.hpBar.fillRect(hpX, hpY, hpW * hpRatio, hpH);
-    // HP border
-    this.hpBar.lineStyle(1, 0x555555, 0.8);
-    this.hpBar.strokeRect(hpX, hpY, hpW, hpH);
-
-    // XP bar
-    this.xpBar.clear();
-    const xpW = 160;
-    const xpH = 4;
-    const xpX = 8;
-    const xpY = 19;
-    this.xpBar.fillStyle(0x222233, 0.8);
-    this.xpBar.fillRect(xpX, xpY, xpW, xpH);
-    this.xpBar.fillStyle(COLORS.xpBlue, 1);
-    this.xpBar.fillRect(xpX, xpY, xpW * (this.xp / this.xpToNext), xpH);
-
-    // Boss HP bar
-    if (this.boss) {
-      this.bossHpBar.setVisible(true);
-      this.bossNameText.setVisible(true);
-      this.bossHpBar.clear();
-      const bw = GAME_WIDTH - 40;
-      const bx = 20;
-      const by = GAME_HEIGHT - 55;
-      this.bossHpBar.fillStyle(0x333333, 0.8);
-      this.bossHpBar.fillRect(bx, by, bw, 10);
-      this.bossHpBar.fillStyle(0xff00ff, 1);
-      this.bossHpBar.fillRect(bx, by, bw * (this.boss.hp / this.boss.maxHp), 10);
-      this.bossHpBar.lineStyle(1, 0x888888, 0.8);
-      this.bossHpBar.strokeRect(bx, by, bw, 10);
-    } else {
-      this.bossHpBar.setVisible(false);
-      this.bossNameText.setVisible(false);
-    }
-
-    // Update texts
-    const streakSuffix = this.killStreak >= 5 ? ` 🔥${this.killStreak}` : "";
-    this.killText.setText(`Kill: ${this.kills}${streakSuffix}`);
-    this.killText.setColor(this.killStreak >= 10 ? "#fbbf24" : "#888");
-    this.levelText.setText(`Lv.${this.level}`);
-    const legionInfo = this.legions.length > 0 ? ` [${this.legions.length}]` : "";
-    const diffLabel = this.getDifficultyLabel();
-    const dungeonName = this.getDungeonName();
-    this.cycleText.setText(`${dungeonName} — Cycle ${this.cycleNumber}${legionInfo} ${diffLabel}`);
-    this.cycleText.setColor(this.cycleNumber >= 5 ? "#f43f5e" : this.cycleNumber >= 3 ? "#fbbf24" : "#888");
-
-    // Minimap (bottom-right corner)
-    this.drawMinimap();
-  }
-
-  private drawMinimap(): void {
-    this.minimapGfx.clear();
-    const mapSize = 60;
-    const mapX = GAME_WIDTH - mapSize - 8;
-    const mapY = GAME_HEIGHT - mapSize - 28;
-    const range = 400; // World units shown in minimap
-
-    // Background
-    this.minimapGfx.fillStyle(0x000000, 0.4);
-    this.minimapGfx.fillRect(mapX, mapY, mapSize, mapSize);
-    this.minimapGfx.lineStyle(1, 0x333355, 0.6);
-    this.minimapGfx.strokeRect(mapX, mapY, mapSize, mapSize);
-
-    const cx = mapX + mapSize / 2;
-    const cy = mapY + mapSize / 2;
-    const ax = this.ace.sprite.x;
-    const ay = this.ace.sprite.y;
-
-    // Enemies (red dots)
-    this.minimapGfx.fillStyle(0xff4444, 0.7);
-    for (const e of this.enemies) {
-      const dx = (e.sprite.x - ax) / range * (mapSize / 2);
-      const dy = (e.sprite.y - ay) / range * (mapSize / 2);
-      if (Math.abs(dx) < mapSize / 2 && Math.abs(dy) < mapSize / 2) {
-        this.minimapGfx.fillRect(cx + dx - 1, cy + dy - 1, 2, 2);
-      }
-    }
-
-    // Companions (cyan dots)
-    this.minimapGfx.fillStyle(0x00ddff, 0.8);
-    for (const c of this.companions) {
-      const dx = (c.sprite.x - ax) / range * (mapSize / 2);
-      const dy = (c.sprite.y - ay) / range * (mapSize / 2);
-      this.minimapGfx.fillCircle(cx + dx, cy + dy, 1.5);
-    }
-
-    // XP gems (green tiny dots)
-    this.minimapGfx.fillStyle(0x667eea, 0.5);
-    for (const g of this.xpGems) {
-      const dx = (g.sprite.x - ax) / range * (mapSize / 2);
-      const dy = (g.sprite.y - ay) / range * (mapSize / 2);
-      if (Math.abs(dx) < mapSize / 2 && Math.abs(dy) < mapSize / 2) {
-        this.minimapGfx.fillRect(cx + dx, cy + dy, 1, 1);
-      }
-    }
-
-    // Player (white center dot)
-    this.minimapGfx.fillStyle(0xffd700, 1);
-    this.minimapGfx.fillCircle(cx, cy, 2);
-
-    // Boss (magenta blip)
-    if (this.boss) {
-      const dx = (this.boss.sprite.x - ax) / range * (mapSize / 2);
-      const dy = (this.boss.sprite.y - ay) / range * (mapSize / 2);
-      this.minimapGfx.fillStyle(0xff00ff, 1);
-      this.minimapGfx.fillCircle(
-        Phaser.Math.Clamp(cx + dx, mapX + 2, mapX + mapSize - 2),
-        Phaser.Math.Clamp(cy + dy, mapY + 2, mapY + mapSize - 2),
-        3,
-      );
-    }
-  }
-
-  // ================================================================
-  // BOSS
-  // ================================================================
-
-  private showWarning(text: string): void {
-    const warn = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, text, {
-        fontFamily: "monospace",
-        fontSize: "32px",
-        color: "#f43f5e",
-        stroke: "#000",
-        strokeThickness: 4,
-      })
-      .setOrigin(0.5)
-      .setDepth(300)
-      .setScrollFactor(0)
-      .setAlpha(0);
-
-    this.tweens.add({
-      targets: warn,
-      alpha: 1,
-      duration: 300,
-      yoyo: true,
-      repeat: 2,
-      onComplete: () => warn.destroy(),
-    });
-
-    // Screen flash red
-    const flash = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.1)
-      .setDepth(200)
-      .setScrollFactor(0);
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 600,
-      repeat: 2,
-      onComplete: () => flash.destroy(),
-    });
-  }
-
-  private spawnBoss(): void {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 250;
-    const bx = this.ace.sprite.x + Math.cos(angle) * dist;
-    const by = this.ace.sprite.y + Math.sin(angle) * dist;
-
-    const bossHp = 200 + this.cycleNumber * 80;
-    // Boss variety based on cycle
-    const bossPool = [
-      // Gen 1
-      "snorlax", "lapras", "aerodactyl", "gyarados", "dragonite",
-      "articuno", "zapdos", "moltres", "mewtwo",
-      // Gen 2
-      "tyranitar", "raikou", "entei", "suicune", "lugia", "hooh",
-      // Gen 3
-      "salamence", "metagross", "groudon", "kyogre", "rayquaza",
-      // Gen 4
-      "garchomp", "togekiss", "mamoswine", "dialga", "palkia", "giratina", "darkrai",
-      // Gen 5
-      "hydreigon", "volcarona", "reshiram", "zekrom", "kyurem", "genesect",
-    ];
-    const bossKey = bossPool[(this.cycleNumber - 1 + this.waveNumber) % bossPool.length];
-    const pmdTexKey = pacTexKey(bossKey);
-    const usePmd = this.textures.exists(pmdTexKey);
-
-    const sprite = this.physics.add.sprite(bx, by, usePmd ? pmdTexKey : "boss").setDepth(12);
-    this.enemyGroup.add(sprite);
-
-    if (usePmd) {
-      sprite.play(`${bossKey}-walk-down`);
-      sprite.setScale(2.0);
-    }
-
-    const hpBarGfx = this.add.graphics().setDepth(13);
-
-    const bossName = POKEMON_SPRITES[bossKey]?.name ?? "Boss";
-    this.boss = {
-      sprite,
-      pokemonKey: bossKey,
-      hp: bossHp,
-      maxHp: bossHp,
-      atk: 12 + this.cycleNumber * 3,
-      speed: 30,
-      hpBar: hpBarGfx,
-      behavior: "chase",
-    };
-    this.enemies.push(this.boss!);
-
-    this.bossNameText.setText(`${bossName} — Cycle ${this.cycleNumber}`).setVisible(true);
-
-    this.showWarning("BOSS!");
-
-    // Switch to boss battle BGM
-    sfx.switchBgm(this.cycleNumber >= 3 ? BGM_TRACKS.bossLegendary : BGM_TRACKS.boss);
-  }
 
   private onBossDefeated(): void {
     this.boss = null;
     this.isPaused = true;
     sfx.stopBgm();
     sfx.playStageClear();
-    // Play victory BGM after a short delay
     this.time.delayedCall(500, () => sfx.startBgm(BGM_TRACKS.victory));
 
-    // Victory flash
-    const flash = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfbbf24, 0.2)
-      .setDepth(200)
-      .setScrollFactor(0);
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 1000,
-      onComplete: () => flash.destroy(),
-    });
-
-    // Show cycle clear screen
+    const flash = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfbbf24, 0.2)
+      .setDepth(200).setScrollFactor(0);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 1000, onComplete: () => flash.destroy() });
     this.time.delayedCall(800, () => this.showCycleClear());
   }
 
-  // ================================================================
-  // CYCLE TRANSITION
-  // ================================================================
-
   private showCycleClear(): void {
-    const overlay = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.85)
-      .setDepth(400)
-      .setScrollFactor(0);
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.85)
+      .setDepth(400).setScrollFactor(0);
 
-    const title = this.add
-      .text(GAME_WIDTH / 2, 80, "STAGE CLEAR!", {
-        fontFamily: "monospace",
-        fontSize: "24px",
-        color: "#fbbf24",
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(401)
-      .setScrollFactor(0);
+    this.add.text(GAME_WIDTH / 2, 80, "STAGE CLEAR!", {
+      fontFamily: "monospace", fontSize: "24px", color: "#fbbf24", stroke: "#000", strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(401).setScrollFactor(0);
 
     const evoName = EVOLUTION_CHAINS[this.ace.pokemonKey]?.[this.aceEvoStage]?.name ?? "Pikachu";
     const totalDps = this.ace.atk + this.companions.reduce((sum, c) => sum + c.atk, 0);
     const stats = [
-      `Cycle ${this.cycleNumber} Complete`,
-      ``,
+      `Cycle ${this.cycleNumber} Complete`, "",
       `Ace: ${evoName}  Lv.${this.level}`,
       `Kills: ${this.kills}  Waves: ${this.waveNumber}`,
       `Party DPS: ${totalDps}`,
-      `Time: ${this.formatTime(CYCLE_DURATION_SEC - this.cycleTimer)}`,
+      `Time: ${formatTime(CYCLE_DURATION_SEC - this.cycleTimer)}`,
     ].join("\n");
+    this.add.text(GAME_WIDTH / 2, 140, stats, {
+      fontFamily: "monospace", fontSize: "14px", color: "#ccc", align: "center", lineSpacing: 6,
+    }).setOrigin(0.5, 0).setDepth(401).setScrollFactor(0);
 
-    this.add
-      .text(GAME_WIDTH / 2, 140, stats, {
-        fontFamily: "monospace",
-        fontSize: "14px",
-        color: "#ccc",
-        align: "center",
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(401)
-      .setScrollFactor(0);
-
-    // "Legion Formed!" section
     const legionColor = [0xffd700, 0x00ddff, 0xff4444][this.cycleNumber % 3];
-    this.add
-      .text(GAME_WIDTH / 2, 260, "— LEGION FORMED —", {
-        fontFamily: "monospace",
-        fontSize: "16px",
-        color: "#667eea",
-      })
-      .setOrigin(0.5)
-      .setDepth(401)
-      .setScrollFactor(0);
+    this.add.text(GAME_WIDTH / 2, 260, "\u2014 LEGION FORMED \u2014", {
+      fontFamily: "monospace", fontSize: "16px", color: "#667eea",
+    }).setOrigin(0.5).setDepth(401).setScrollFactor(0);
 
     const companionNames = this.companions.map((c) => {
       const key = c.sprite.texture.key.replace("pac-", "");
       return POKEMON_SPRITES[key]?.name ?? key;
     });
-    this.add
-      .text(GAME_WIDTH / 2, 300, `${evoName} + ${companionNames.join(", ") || "Solo"}`, {
-        fontFamily: "monospace",
-        fontSize: "12px",
-        color: "#aaa",
-      })
-      .setOrigin(0.5)
-      .setDepth(401)
-      .setScrollFactor(0);
+    this.add.text(GAME_WIDTH / 2, 300, `${evoName} + ${companionNames.join(", ") || "Solo"}`, {
+      fontFamily: "monospace", fontSize: "12px", color: "#aaa",
+    }).setOrigin(0.5).setDepth(401).setScrollFactor(0);
 
-    // Store legion
-    this.legions.push({
-      ace: evoName,
-      companions: companionNames,
-      dps: totalDps,
-      color: legionColor,
-    });
+    this.legions.push({ ace: evoName, companions: companionNames, dps: totalDps, color: legionColor });
 
-    // "Next Cycle" button
-    const btnBg = this.add
-      .rectangle(GAME_WIDTH / 2, 400, 200, 50, 0x667eea, 0.9)
-      .setDepth(401)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-
-    const btnText = this.add
-      .text(GAME_WIDTH / 2, 400, "NEXT CYCLE →", {
-        fontFamily: "monospace",
-        fontSize: "16px",
-        color: "#fff",
-      })
-      .setOrigin(0.5)
-      .setDepth(402)
-      .setScrollFactor(0);
-
-    this.tweens.add({
-      targets: [btnBg, btnText],
-      alpha: 0.5,
-      yoyo: true,
-      repeat: -1,
-      duration: 800,
-    });
-
-    btnBg.on("pointerdown", () => {
-      this.startNextCycle();
-    });
-
-    // Also allow tap anywhere after 2 seconds
+    const btnBg = this.add.rectangle(GAME_WIDTH / 2, 400, 200, 50, 0x667eea, 0.9)
+      .setDepth(401).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    const btnText = this.add.text(GAME_WIDTH / 2, 400, "NEXT CYCLE \u2192", {
+      fontFamily: "monospace", fontSize: "16px", color: "#fff",
+    }).setOrigin(0.5).setDepth(402).setScrollFactor(0);
+    this.tweens.add({ targets: [btnBg, btnText], alpha: 0.5, yoyo: true, repeat: -1, duration: 800 });
+    btnBg.on("pointerdown", () => this.startNextCycle());
     this.time.delayedCall(2000, () => {
-      this.input.once("pointerdown", () => {
-        this.startNextCycle();
-      });
+      this.input.once("pointerdown", () => this.startNextCycle());
     });
   }
 
-  private cycleTransitioning = false;
-
   private startNextCycle(): void {
-    if (this.cycleTransitioning) return; // Prevent double-call
+    if (this.cycleTransitioning) return;
     this.cycleTransitioning = true;
     sfx.stopBgm();
     const nextCycle = this.cycleNumber + 1;
     const savedLegions = [...this.legions];
-
-    // Use stop+start instead of restart to ensure clean physics reset
     this.scene.stop("GameScene");
     this.scene.start("GameScene", {
       cycleNumber: nextCycle,
@@ -3140,14 +1034,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ================================================================
-  // LEVEL-UP SELECTION UI
+  // LEVEL-UP SELECTION
   // ================================================================
 
   private showLevelUpSelection(): void {
     this.isPaused = true;
-    this.pendingLevelUp = true;
+    this.pendingLevelUp = false; // Consumed
 
-    // Stop all movement immediately
     this.ace.sprite.setVelocity(0, 0);
     this.joyVector.set(0, 0);
     this.joyPointer = null;
@@ -3157,47 +1050,34 @@ export class GameScene extends Phaser.Scene {
     this.levelUpContainer.removeAll(true);
     this.levelUpContainer.setVisible(true);
 
-    // Dim overlay
-    const overlay = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7)
-      .setScrollFactor(0);
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setScrollFactor(0);
     this.levelUpContainer.add(overlay);
 
-    // Title
-    const title = this.add
-      .text(GAME_WIDTH / 2, 60, `LEVEL ${this.level}!`, {
-        fontFamily: "monospace",
-        fontSize: "22px",
-        color: "#fbbf24",
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0);
+    const title = this.add.text(GAME_WIDTH / 2, 60, `LEVEL ${this.level}!`, {
+      fontFamily: "monospace", fontSize: "22px", color: "#fbbf24", stroke: "#000", strokeThickness: 3,
+    }).setOrigin(0.5).setScrollFactor(0);
     this.levelUpContainer.add(title);
 
-    // Generate 3 choices
     type Choice = { label: string; desc: string; action: () => void; color: number; portrait?: string };
     const choices: Choice[] = [];
 
-    // Choice 0: Evolution (at level 5, 10, etc.)
+    // Evolution
     const evoChain = EVOLUTION_CHAINS[this.ace.pokemonKey];
     if (evoChain && this.aceEvoStage < evoChain.length - 1 && this.level >= (this.aceEvoStage + 1) * 5) {
       const nextStage = evoChain[this.aceEvoStage + 1];
       choices.push({
-        label: `EVOLVE → ${nextStage.name}`,
-        desc: `ATK×${nextStage.atkMult} HP×${nextStage.hpMult} SPD×${nextStage.speedMult}`,
+        label: `EVOLVE \u2192 ${nextStage.name}`,
+        desc: `ATK\u00d7${nextStage.atkMult} HP\u00d7${nextStage.hpMult} SPD\u00d7${nextStage.speedMult}`,
         color: 0xff00ff,
         portrait: this.ace.pokemonKey,
-        action: () => this.evolveAce(),
+        action: () => evolveAce(this.ctx),
       });
     }
 
-    // Choice A: New companion (if slots available)
+    // Companion
     if (this.companions.length < 5) {
-      const poolIdx = this.companions.length % GameScene.COMPANION_POOL.length;
-      const pool = GameScene.COMPANION_POOL[poolIdx];
-      const nextType = pool.type;
+      const poolIdx = this.companions.length % COMPANION_POOL.length;
+      const pool = COMPANION_POOL[poolIdx];
       const pokeName = POKEMON_SPRITES[pool.key]?.name ?? pool.key;
       const typeDescs: Record<string, string> = {
         projectile: "Fires projectiles at enemies",
@@ -3206,21 +1086,20 @@ export class GameScene extends Phaser.Scene {
       };
       choices.push({
         label: `+ ${pokeName}`,
-        desc: typeDescs[nextType],
+        desc: typeDescs[pool.type],
         color: 0x00ddff,
         portrait: pool.key,
-        action: () => this.addCompanion(),
+        action: () => addCompanion(this.ctx),
       });
     }
 
-    // Adaptability multiplier for stat boosts
-    const am = this.adaptabilityMult; // 1.2x for eevee, 1x for others
+    const am = this.adaptabilityMult;
 
-    // Choice B: Boost ATK
+    // ATK boost
     const atkBoost = 1 + 0.25 * am;
     choices.push({
       label: `ATK +${Math.round(25 * am)}%`,
-      desc: `${this.ace.atk} → ${Math.floor(this.ace.atk * atkBoost)}`,
+      desc: `${this.ace.atk} \u2192 ${Math.floor(this.ace.atk * atkBoost)}`,
       color: 0xf43f5e,
       portrait: this.ace.pokemonKey,
       action: () => {
@@ -3229,24 +1108,21 @@ export class GameScene extends Phaser.Scene {
       },
     });
 
-    // Choice C: Boost HP + heal
+    // HP boost
     const hpBoost = Math.floor(30 * am);
     choices.push({
       label: `MAX HP +${hpBoost}`,
       desc: `Heal to full (${this.ace.maxHp + hpBoost} HP)`,
       color: 0x3bc95e,
       portrait: this.ace.pokemonKey,
-      action: () => {
-        this.ace.maxHp += hpBoost;
-        this.ace.hp = this.ace.maxHp;
-      },
+      action: () => { this.ace.maxHp += hpBoost; this.ace.hp = this.ace.maxHp; },
     });
 
-    // Choice D: Speed + Range
+    // Speed boost
     const spdBoost = 1 + 0.2 * am;
     choices.push({
       label: `SPEED +${Math.round(20 * am)}%`,
-      desc: `Move faster, attack faster`,
+      desc: "Move faster, attack faster",
       color: 0xfbbf24,
       portrait: this.ace.pokemonKey,
       action: () => {
@@ -3255,51 +1131,45 @@ export class GameScene extends Phaser.Scene {
       },
     });
 
-    // Choice E: Critical Hit
+    // Crit
     if (this.critChance < 0.5) {
       choices.push({
         label: "CRIT +10%",
-        desc: `Crit chance: ${Math.round(this.critChance * 100)}% → ${Math.round((this.critChance + 0.1) * 100)}%`,
+        desc: `Crit chance: ${Math.round(this.critChance * 100)}% \u2192 ${Math.round((this.critChance + 0.1) * 100)}%`,
         color: 0xff6b6b,
         portrait: this.ace.pokemonKey,
-        action: () => {
-          this.critChance = Math.min(0.5, this.critChance + 0.1);
-        },
+        action: () => { this.critChance = Math.min(0.5, this.critChance + 0.1); },
       });
     }
 
-    // Choice F: Lifesteal
+    // Lifesteal
     if (this.lifestealRate < 0.3) {
       choices.push({
         label: "LIFESTEAL +5%",
-        desc: `Heal ${Math.round(this.lifestealRate * 100)}% → ${Math.round((this.lifestealRate + 0.05) * 100)}% of damage`,
+        desc: `Heal ${Math.round(this.lifestealRate * 100)}% \u2192 ${Math.round((this.lifestealRate + 0.05) * 100)}% of damage`,
         color: 0x22c55e,
         portrait: this.ace.pokemonKey,
-        action: () => {
-          this.lifestealRate = Math.min(0.3, this.lifestealRate + 0.05);
-        },
+        action: () => { this.lifestealRate = Math.min(0.3, this.lifestealRate + 0.05); },
       });
     }
 
-    // Choice G: XP Magnet Range
+    // Magnet
     choices.push({
       label: "XP MAGNET +30",
-      desc: `Pickup range: ${this.xpMagnetRange} → ${this.xpMagnetRange + 30}`,
+      desc: `Pickup range: ${this.xpMagnetRange} \u2192 ${this.xpMagnetRange + 30}`,
       color: 0x818cf8,
       portrait: this.ace.pokemonKey,
-      action: () => {
-        this.xpMagnetRange += 30;
-      },
+      action: () => { this.xpMagnetRange += 30; },
     });
 
-    // Shuffle and take max 3 choices
+    // Shuffle and take 3
     for (let i = choices.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [choices[i], choices[j]] = [choices[j], choices[i]];
     }
     choices.length = Math.min(choices.length, 3);
 
-    // Render choice cards
+    // Render cards
     const startY = 140;
     const cardH = 90;
     const gap = 15;
@@ -3309,276 +1179,58 @@ export class GameScene extends Phaser.Scene {
       const hasPortrait = choice.portrait && this.textures.exists(`portrait-${choice.portrait}`);
       const textOffsetX = hasPortrait ? 30 : 0;
 
-      // Card background
-      const card = this.add
-        .rectangle(GAME_WIDTH / 2, cy + cardH / 2, GAME_WIDTH - 40, cardH, 0x111118, 0.95)
-        .setStrokeStyle(2, choice.color, 0.8)
-        .setScrollFactor(0)
-        .setInteractive({ useHandCursor: true });
+      const card = this.add.rectangle(GAME_WIDTH / 2, cy + cardH / 2, GAME_WIDTH - 40, cardH, 0x111118, 0.95)
+        .setStrokeStyle(2, choice.color, 0.8).setScrollFactor(0).setInteractive({ useHandCursor: true });
       this.levelUpContainer.add(card);
 
-      // Portrait image (left side of card)
       if (hasPortrait) {
-        const portrait = this.add
-          .image(50, cy + cardH / 2, `portrait-${choice.portrait!}`)
-          .setDisplaySize(48, 48)
-          .setScrollFactor(0)
-          .setDepth(501);
+        const portrait = this.add.image(50, cy + cardH / 2, `portrait-${choice.portrait!}`)
+          .setDisplaySize(48, 48).setScrollFactor(0).setDepth(501);
         this.levelUpContainer.add(portrait);
       }
 
-      // Label
-      const lbl = this.add
-        .text(GAME_WIDTH / 2 + textOffsetX, cy + 25, choice.label, {
-          fontFamily: "monospace",
-          fontSize: "18px",
-          color: `#${choice.color.toString(16).padStart(6, "0")}`,
-        })
-        .setOrigin(0.5)
-        .setScrollFactor(0);
+      const lbl = this.add.text(GAME_WIDTH / 2 + textOffsetX, cy + 25, choice.label, {
+        fontFamily: "monospace", fontSize: "18px",
+        color: `#${choice.color.toString(16).padStart(6, "0")}`,
+      }).setOrigin(0.5).setScrollFactor(0);
       this.levelUpContainer.add(lbl);
 
-      // Description
-      const desc = this.add
-        .text(GAME_WIDTH / 2 + textOffsetX, cy + 55, choice.desc, {
-          fontFamily: "monospace",
-          fontSize: "11px",
-          color: "#888",
-        })
-        .setOrigin(0.5)
-        .setScrollFactor(0);
+      const desc = this.add.text(GAME_WIDTH / 2 + textOffsetX, cy + 55, choice.desc, {
+        fontFamily: "monospace", fontSize: "11px", color: "#888",
+      }).setOrigin(0.5).setScrollFactor(0);
       this.levelUpContainer.add(desc);
 
-      // Click handler
-      card.on("pointerdown", () => {
-        choice.action();
-        this.closeLevelUpSelection();
-      });
-
-      // Hover effect
+      card.on("pointerdown", () => { choice.action(); this.closeLevelUpSelection(); });
       card.on("pointerover", () => card.setFillStyle(0x1a1a25, 1));
       card.on("pointerout", () => card.setFillStyle(0x111118, 0.95));
-    });
-  }
-
-  // ================================================================
-  // KILL STREAK + PARTICLES
-  // ================================================================
-
-  private updateKillStreak(): void {
-    // Reset streak if 2 seconds pass without a kill
-    if (this.killStreak > 0 && this.time.now - this.lastKillTime > 2000) {
-      this.killStreak = 0;
-    }
-  }
-
-  // ================================================================
-  // STARTER SKILL RUNTIME EFFECTS
-  // ================================================================
-
-  private skillTimer = 0; // General-purpose skill timer (seconds)
-
-  private updateSkillEffects(dt: number): void {
-    if (!this.skillId) return;
-    this.skillTimer += dt;
-
-    switch (this.skillId) {
-      // Bulbasaur — Overgrow: regen 1% max HP every 3 seconds
-      case "overgrow":
-        if (this.skillTimer >= 3) {
-          this.skillTimer -= 3;
-          if (this.ace.hp < this.ace.maxHp) {
-            const heal = Math.max(1, Math.floor(this.ace.maxHp * 0.01));
-            this.ace.hp = Math.min(this.ace.maxHp, this.ace.hp + heal);
-          }
-        }
-        break;
-
-      // Torchic — Speed Boost: +5% attack speed every 30 seconds
-      case "speed_boost":
-        if (this.skillTimer >= 30) {
-          this.skillTimer -= 30;
-          this.speedBoostStacks++;
-          this.ace.attackCooldown = Math.max(200, Math.floor(this.ace.attackCooldown * 0.95));
-          this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 30, "SPD BOOST!", "#fbbf24");
-        }
-        break;
-
-      // Treecko — Unburden: speed buff timer countdown
-      case "unburden":
-        if (this.unburdenTimer > 0) {
-          this.unburdenTimer -= dt;
-          if (this.unburdenTimer <= 0) {
-            // Remove speed buff
-            this.ace.speed = Math.floor(this.ace.speed / 1.5);
-            this.unburdenTimer = 0;
-          }
-        }
-        break;
-
-      // Gastly — Levitate: phase timer countdown
-      case "levitate":
-        if (this.phaseTimer > 0) {
-          this.phaseTimer -= dt;
-          this.ace.sprite.setAlpha(0.5);
-          if (this.phaseTimer <= 0) {
-            this.ace.sprite.setAlpha(1);
-            this.phaseTimer = 0;
-          }
-        }
-        break;
-
-      // Mudkip — Damp: slow nearby enemies by 20%
-      case "damp":
-        for (const e of this.enemies) {
-          if (!e.sprite.active) continue;
-          const dist = Phaser.Math.Distance.Between(
-            this.ace.sprite.x, this.ace.sprite.y,
-            e.sprite.x, e.sprite.y,
-          );
-          if (dist < 120) {
-            // Apply slow by reducing velocity (applied each frame)
-            const body = e.sprite.body as Phaser.Physics.Arcade.Body;
-            if (body) {
-              body.velocity.x *= 0.8;
-              body.velocity.y *= 0.8;
-            }
-          }
-        }
-        break;
-    }
-  }
-
-  private showStreakText(streak: number): void {
-    const labels = ["", "", "", "", "", "", "", "", "", "",
-      "COMBO x10!", "", "", "", "", "COMBO x15!", "", "", "", "",
-      "RAMPAGE x20!", "", "", "", "", "MASSACRE x25!"];
-    const label = labels[streak] ?? `COMBO x${streak}!`;
-    const color = streak >= 20 ? "#f43f5e" : streak >= 15 ? "#fbbf24" : "#667eea";
-
-    const txt = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, label, {
-        fontFamily: "monospace",
-        fontSize: "20px",
-        color,
-        stroke: "#000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(250)
-      .setScrollFactor(0);
-
-    this.tweens.add({
-      targets: txt,
-      y: txt.y - 40,
-      alpha: 0,
-      scaleX: 1.3,
-      scaleY: 1.3,
-      duration: 1200,
-      ease: "Power2",
-      onComplete: () => txt.destroy(),
-    });
-  }
-
-  private spawnDeathParticles(x: number, y: number, isBoss: boolean): void {
-    const count = isBoss ? 12 : 5;
-    const color = isBoss ? 0xfbbf24 : 0xff6666;
-    for (let i = 0; i < count; i++) {
-      const p = this.add.circle(x, y, isBoss ? 4 : 2, color, 0.8).setDepth(50);
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 40 + Math.random() * (isBoss ? 100 : 60);
-      this.tweens.add({
-        targets: p,
-        x: x + Math.cos(angle) * speed,
-        y: y + Math.sin(angle) * speed,
-        alpha: 0,
-        scaleX: 0.3,
-        scaleY: 0.3,
-        duration: 300 + Math.random() * 200,
-        onComplete: () => p.destroy(),
-      });
-    }
-  }
-
-  // ================================================================
-  // DAMAGE POPUPS
-  // ================================================================
-
-  private showDamagePopup(x: number, y: number, amount: number | string, color = "#fff"): void {
-    const label = typeof amount === "string" ? amount : Math.ceil(amount).toString();
-    // Reuse pooled text if available
-    let txt = this.dmgPopups.pop();
-    if (txt) {
-      txt.setPosition(x, y - 10);
-      txt.setText(label);
-      txt.setStyle({ color });
-      txt.setAlpha(1).setVisible(true);
-    } else {
-      txt = this.add
-        .text(x, y - 10, label, {
-          fontFamily: "monospace",
-          fontSize: "12px",
-          color,
-          stroke: "#000",
-          strokeThickness: 2,
-        })
-        .setOrigin(0.5)
-        .setDepth(300);
-    }
-
-    this.tweens.add({
-      targets: txt,
-      y: txt.y - 24,
-      alpha: 0,
-      duration: 600,
-      onComplete: () => {
-        txt.setVisible(false);
-        if (this.dmgPopups.length < 30) this.dmgPopups.push(txt);
-        else txt.destroy();
-      },
     });
   }
 
   private closeLevelUpSelection(): void {
     this.levelUpContainer.setVisible(false);
     this.levelUpContainer.removeAll(true);
-    this.pendingLevelUp = false;
-    // Delay unpause to prevent the same pointerdown from triggering joystick
-    this.time.delayedCall(100, () => {
-      this.isPaused = false;
-    });
+    this.time.delayedCall(100, () => { this.isPaused = false; });
   }
 
   // ================================================================
   // ACHIEVEMENTS
   // ================================================================
 
-  /** Public getters for achievement checks */
-  getKills(): number { return this.kills; }
-  getWave(): number { return this.waveNumber; }
-  getLevel(): number { return this.level; }
-  getEvoStage(): number { return this.aceEvoStage; }
-  getPartySize(): number { return 1 + this.companions.length; }
-  getCycle(): number { return this.cycleNumber; }
-  getStreak(): number { return this.killStreak; }
-
-  /** Calculate coins earned from this run */
-  private getEarnedCoins(): number {
-    // Base: 1 coin per 10 kills + 5 per wave + 10 per cycle
-    const killCoins = Math.floor(this.kills / 10);
-    const waveCoins = this.waveNumber * 5;
-    const cycleCoins = (this.cycleNumber - 1) * 10;
-    const levelCoins = this.level * 2;
-    return killCoins + waveCoins + cycleCoins + levelCoins;
-  }
-
   private checkAchievements(): void {
+    const stats: GameStats = {
+      kills: this.kills,
+      waveNumber: this.waveNumber,
+      level: this.level,
+      aceEvoStage: this.aceEvoStage,
+      partySize: 1 + this.companions.length,
+      cycleNumber: this.cycleNumber,
+      killStreak: this.killStreak,
+    };
     for (const ach of ACHIEVEMENTS) {
       if (this.saveData.unlockedAchievements.includes(ach.id)) continue;
-      if (ach.check(this)) {
+      if (ach.check(stats)) {
         this.saveData.unlockedAchievements.push(ach.id);
         this.achievementQueue.push(ach);
-        // Check if any new starters are unlocked
         checkStarterUnlocks(this.saveData);
         saveSaveData(this.saveData);
       }
@@ -3588,30 +1240,15 @@ export class GameScene extends Phaser.Scene {
 
   private processAchievementQueue(): void {
     if (this.showingAchievement || this.achievementQueue.length === 0) return;
-
     this.showingAchievement = true;
     const ach = this.achievementQueue.shift()!;
 
-    // Achievement banner at top
-    const banner = this.add
-      .rectangle(GAME_WIDTH / 2, -40, GAME_WIDTH - 20, 50, 0x1a1a2e, 0.95)
-      .setStrokeStyle(1, 0xfbbf24, 0.8)
-      .setDepth(700)
-      .setScrollFactor(0);
+    const banner = this.add.rectangle(GAME_WIDTH / 2, -40, GAME_WIDTH - 20, 50, 0x1a1a2e, 0.95)
+      .setStrokeStyle(1, 0xfbbf24, 0.8).setDepth(700).setScrollFactor(0);
+    const achText = this.add.text(GAME_WIDTH / 2, -40, `\u2605 ${ach.name}\n${ach.desc}`, {
+      fontFamily: "monospace", fontSize: "11px", color: "#fbbf24", align: "center", lineSpacing: 2,
+    }).setOrigin(0.5).setDepth(701).setScrollFactor(0);
 
-    const achText = this.add
-      .text(GAME_WIDTH / 2, -40, `★ ${ach.name}\n${ach.desc}`, {
-        fontFamily: "monospace",
-        fontSize: "11px",
-        color: "#fbbf24",
-        align: "center",
-        lineSpacing: 2,
-      })
-      .setOrigin(0.5)
-      .setDepth(701)
-      .setScrollFactor(0);
-
-    // Slide in from top
     this.tweens.add({
       targets: [banner, achText],
       y: 70,
@@ -3634,6 +1271,18 @@ export class GameScene extends Phaser.Scene {
         });
       },
     });
+  }
+
+  // ================================================================
+  // SAVE / COINS
+  // ================================================================
+
+  private getEarnedCoins(): number {
+    const killCoins = Math.floor(this.kills / 10);
+    const waveCoins = this.waveNumber * 5;
+    const cycleCoins = (this.cycleNumber - 1) * 10;
+    const levelCoins = this.level * 2;
+    return killCoins + waveCoins + cycleCoins + levelCoins;
   }
 
   private saveHighScore(): void {

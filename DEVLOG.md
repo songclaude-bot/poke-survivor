@@ -1,5 +1,42 @@
 # Poke Survivor - Development Log
 
+## 2026-02-24 (Session 8) — Full Manager Refactoring
+
+### Changes
+- **GameScene.ts refactored from 3649 → 1298 lines** (64% reduction)
+- **4 manager modules created** (functional/declarative style):
+  - `CombatManager.ts` (663 lines) — projectiles, hit handling, damage, skills, items, XP, evolution
+  - `EnemyManager.ts` (478 lines) — spawning, AI movement, formations, boss logic
+  - `UIManager.ts` (304 lines) — HUD, minimap, danger vignette, warnings, damage popups, particles
+  - `CompanionManager.ts` (228 lines) — companion add/update/evolve, legion update
+- **Data layer extracted**:
+  - `GameTypes.ts` (137 lines) — all shared interfaces and types
+  - `GameData.ts` (231 lines) — pure constants and utility functions
+  - `GameContext.ts` (122 lines) — shared context interface between scene and managers
+- **Removed all duplicate data**: inline ENEMY_POOL, behavior Sets, BOSS_POOL, COMPANION_POOL, formatTime, getDungeonName, getDifficultyLabel — now single-source in GameData.ts
+- **Achievement check fix**: Now uses proper GameStats snapshot instead of passing `this`
+
+### Architecture
+```
+GameScene (orchestrator, 1298 lines)
+  ├── GameContext (shared interface)
+  ├── CombatManager (combat logic)
+  ├── EnemyManager (spawn + AI)
+  ├── CompanionManager (companions + legions)
+  ├── UIManager (HUD + effects)
+  ├── GameData (constants)
+  └── GameTypes (interfaces)
+```
+
+### Technical Notes
+- Each manager exports pure functions that receive GameContext
+- GameScene creates a `ctx` getter that snapshots current state for managers
+- `syncBack()` method writes manager mutations back to scene state
+- Callback bridges (onEnemyDeath, damageAce, fireProjectile) handle cross-manager interactions
+- Zero TypeScript errors, Vite build passes clean
+
+---
+
 ## 2026-02-24 (Session 7) — Lobby Scene, Coin Economy, Unique Skills & Machop Easter Egg
 
 ### Changes
