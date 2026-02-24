@@ -23,6 +23,13 @@ import {
   hasAttackVariant,
   type AttackType,
 } from "../effects/AttackEffects";
+import {
+  SaveData,
+  loadSaveData,
+  saveSaveData,
+  checkStarterUnlocks,
+  ALL_STARTERS,
+} from "../data/SaveData";
 
 /* ================================================================
    GameScene — Core prototype
@@ -187,27 +194,7 @@ const ACHIEVEMENTS: Achievement[] = [
   { id: "streak_15", name: "Combo Master", desc: "Get a 15 kill streak", check: s => s.getStreak() >= 15 },
 ];
 
-// -- High score storage --
-const STORAGE_KEY = "poke-survivor-data";
-
-interface SaveData {
-  highScore: { kills: number; wave: number; level: number; cycle: number; totalTime?: number };
-  unlockedAchievements: string[];
-}
-
-function loadSaveData(): SaveData {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
-  return { highScore: { kills: 0, wave: 0, level: 0, cycle: 1, totalTime: 0 }, unlockedAchievements: [] };
-}
-
-function saveSaveData(data: SaveData): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch { /* ignore */ }
-}
+// SaveData is now imported from ../data/SaveData
 
 export class GameScene extends Phaser.Scene {
   // -- Core groups --
@@ -434,28 +421,46 @@ export class GameScene extends Phaser.Scene {
     // Note: cycleNumber and legions are preserved via init()
   }
 
+  /** Get dungeon tile key based on current cycle */
+  private getDungeonTileKey(): string {
+    const CYCLE_TILES = [
+      "dungeon-tiny",     // Cycle 1: TinyWoods (bright, easy)
+      "dungeon-steel",    // Cycle 2: MtSteel (earthy, medium)
+      "dungeon-crystal",  // Cycle 3: CrystalCave (purple-blue)
+      "dungeon-forest",   // Cycle 4: MystifyingForest (dark red-brown)
+      "dungeon-frost",    // Cycle 5: FrostyForest (icy)
+      "dungeon-floor",    // Cycle 6+: DarkCrater (boss/nightmare)
+    ];
+    const idx = Math.min(this.cycleNumber - 1, CYCLE_TILES.length - 1);
+    const key = CYCLE_TILES[idx];
+    return this.textures.exists(key) ? key : "dungeon-floor";
+  }
+
   private createStarfield(): void {
-    // Dungeon floor tile background instead of starfield
-    if (this.textures.exists("dungeon-floor")) {
-      const tex = this.textures.get("dungeon-floor");
+    // Dungeon floor tile background — changes per cycle
+    const tileKey = this.getDungeonTileKey();
+    if (this.textures.exists(tileKey)) {
+      const tex = this.textures.get(tileKey);
       const tw = tex.getSourceImage().width;
       const th = tex.getSourceImage().height;
       // Tile enough to cover camera movement area
       for (let ty = -th * 2; ty < GAME_HEIGHT + th * 4; ty += th) {
         for (let tx = -tw * 2; tx < GAME_WIDTH + tw * 4; tx += tw) {
-          this.add.image(tx, ty, "dungeon-floor").setOrigin(0, 0).setDepth(-10);
+          this.add.image(tx, ty, tileKey).setOrigin(0, 0).setDepth(-10);
         }
       }
     }
     this.starGfx = this.add.graphics().setDepth(-10);
   }
 
-  /** Starter base stats per pokemon */
-  private static readonly STARTER_STATS: Record<string, { hp: number; atk: number; speed: number; range: number; cooldown: number }> = {
-    pikachu:    { hp: 100, atk: 10, speed: 160, range: 120, cooldown: 800 },
-    charmander: { hp: 80,  atk: 14, speed: 160, range: 130, cooldown: 700 },
-    squirtle:   { hp: 130, atk: 8,  speed: 150, range: 110, cooldown: 900 },
-  };
+  /** Starter base stats — derived from ALL_STARTERS shared data */
+  private static get STARTER_STATS(): Record<string, { hp: number; atk: number; speed: number; range: number; cooldown: number }> {
+    const map: Record<string, { hp: number; atk: number; speed: number; range: number; cooldown: number }> = {};
+    for (const s of ALL_STARTERS) {
+      map[s.key] = { hp: s.hp, atk: s.atk, speed: s.speed, range: s.range, cooldown: s.cooldown };
+    }
+    return map;
+  }
 
   private createAce(): void {
     const aceKey = this.starterKey;
@@ -2359,6 +2364,19 @@ export class GameScene extends Phaser.Scene {
     return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
+  private getDungeonName(): string {
+    const DUNGEON_NAMES = [
+      "Tiny Woods",
+      "Mt. Steel",
+      "Crystal Cave",
+      "Mystic Forest",
+      "Frosty Forest",
+      "Dark Crater",
+    ];
+    const idx = Math.min(this.cycleNumber - 1, DUNGEON_NAMES.length - 1);
+    return DUNGEON_NAMES[idx];
+  }
+
   private getDifficultyLabel(): string {
     if (this.cycleNumber >= 7) return "INFERNO";
     if (this.cycleNumber >= 5) return "NIGHTMARE";
@@ -2425,7 +2443,8 @@ export class GameScene extends Phaser.Scene {
     this.levelText.setText(`Lv.${this.level}`);
     const legionInfo = this.legions.length > 0 ? ` [${this.legions.length}]` : "";
     const diffLabel = this.getDifficultyLabel();
-    this.cycleText.setText(`Cycle ${this.cycleNumber}${legionInfo} ${diffLabel}`);
+    const dungeonName = this.getDungeonName();
+    this.cycleText.setText(`${dungeonName} — Cycle ${this.cycleNumber}${legionInfo} ${diffLabel}`);
     this.cycleText.setColor(this.cycleNumber >= 5 ? "#f43f5e" : this.cycleNumber >= 3 ? "#fbbf24" : "#888");
 
     // Minimap (bottom-right corner)
@@ -3084,6 +3103,8 @@ export class GameScene extends Phaser.Scene {
       if (ach.check(this)) {
         this.saveData.unlockedAchievements.push(ach.id);
         this.achievementQueue.push(ach);
+        // Check if any new starters are unlocked
+        checkStarterUnlocks(this.saveData);
         saveSaveData(this.saveData);
       }
     }

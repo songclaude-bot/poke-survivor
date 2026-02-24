@@ -29,8 +29,13 @@ export class BootScene extends Phaser.Scene {
       console.warn(`[BootScene] Failed to load: ${file.key} — using placeholder`);
     });
 
-    // Load dungeon floor tile for game background
+    // Load dungeon floor tiles for stage-based backgrounds
     this.load.image("dungeon-floor", "assets/dungeon-floor.png");
+    this.load.image("dungeon-tiny", "assets/dungeon-tiny.png");
+    this.load.image("dungeon-steel", "assets/dungeon-steel.png");
+    this.load.image("dungeon-crystal", "assets/dungeon-crystal.png");
+    this.load.image("dungeon-forest", "assets/dungeon-forest.png");
+    this.load.image("dungeon-frost", "assets/dungeon-frost.png");
 
     // Load PMD sprites from SpriteCollab (async, may fail on network issues)
     loadPmdSprites(this);
