@@ -1,5 +1,30 @@
 # Poke Survivor - Development Log
 
+## 2026-02-24 (Session 5) — Pokemon Auto Chess Atlas Migration
+
+### Changes
+- **Sprite system overhaul**: Migrated from PMDCollab raw spritesheets to Pokemon Auto Chess pre-packed TexturePacker multiatlas format
+  - `load.spritesheet()` → `load.multiatlas()` — no more manual frameWidth/frameHeight
+  - Walk + Attack + Idle + Hurt all in one atlas per pokemon — no texture swapping needed
+  - Auto-discovers animations by scanning atlas frame names at runtime
+  - Texture key prefix changed from `pmd-` to `pac-`
+- **Pokemon roster expanded to 80+**: Gen 1-3 coverage with chikorita, cyndaquil, totodile, treecko, torchic, mudkip, ralts, bagon, beldum, and many more
+- **Attack system simplified**: Attack animations play from same atlas texture — no more `setTexture()` swap between walk/attack spritesheets
+- **Evolution simplified**: Just play new animation from evolved pokemon's atlas, update pokemonKey
+
+### Technical Notes
+- Source: `keldaanCommunity/pokemonAutoChess` (GPL-3.0) — `app/public/src/assets/pokemons/{id}.json` + `{id}.png`
+- Atlas frame naming: `Normal/{Action}/Anim/{Dir 0-7}/{FrameIdx 0000}`
+- Frame dimensions vary per action within same pokemon — atlas handles it all
+- This permanently fixes the "wrong frame dimensions" class of bugs that plagued sessions 1-4
+- Vite build needs `--max-old-space-size=4096` due to larger bundle (80+ pokemon configs)
+
+### Stats
+- 3 files changed, 264 insertions, 346 deletions (net reduction!)
+- Commit: `f24d0fc`
+
+---
+
 ## 2026-02-24 (Session 4) — Enemy Formations, Pokemon Expansion, Evolution Fix
 
 ### Changes
