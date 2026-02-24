@@ -245,6 +245,14 @@ export class GameScene extends Phaser.Scene {
   private lastKillTime = 0;
   private totalSurvivalTime = 0; // Total time across all cycles
 
+  // -- Dodge roll --
+  private isDodging = false;
+  private dodgeTimer = 0;
+  private dodgeCooldown = 0;
+  private static readonly DODGE_DURATION = 0.25;   // seconds of i-frames
+  private static readonly DODGE_COOLDOWN = 1.5;     // seconds between dodges
+  private static readonly DODGE_SPEED = 400;         // dash speed
+
   // -- Evolution --
   private aceEvoStage = 0;
 
@@ -269,6 +277,7 @@ export class GameScene extends Phaser.Scene {
   private levelText!: Phaser.GameObjects.Text;
   private cycleText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
+  private dodgeBtn!: Phaser.GameObjects.Text;
 
   // -- Damage popup pool --
   private dmgPopups: Phaser.GameObjects.Text[] = [];
@@ -496,6 +505,20 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100)
       .setScrollFactor(0);
 
+    // Dodge button (right side)
+    this.dodgeBtn = this.add
+      .text(GAME_WIDTH - 50, GAME_HEIGHT - 100, "DODGE", {
+        fontFamily: "monospace",
+        fontSize: "12px",
+        color: "#667eea",
+        backgroundColor: "#111118",
+        padding: { x: 8, y: 6 },
+      })
+      .setOrigin(0.5)
+      .setDepth(90)
+      .setScrollFactor(0)
+      .setAlpha(0.6);
+
     // Boss HP bar (hidden until boss spawns)
     this.bossHpBar = this.add.graphics().setDepth(100).setScrollFactor(0).setVisible(false);
     this.bossNameText = this.add
@@ -689,11 +712,14 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
       if (this.isPaused) return;
-      // Only use left half for joystick
+      // Left half: joystick
       if (p.x < GAME_WIDTH * 0.6) {
         this.joyPointer = p;
         this.joyBase.setPosition(p.x, p.y).setAlpha(0.5);
         this.joyThumb.setPosition(p.x, p.y);
+      } else {
+        // Right half: dodge roll
+        this.tryDodge();
       }
     });
 
@@ -826,7 +852,29 @@ export class GameScene extends Phaser.Scene {
   // MOVEMENT
   // ================================================================
 
-  private updateAceMovement(_dt: number): void {
+  private updateAceMovement(dt: number): void {
+    // Update dodge timers
+    if (this.dodgeCooldown > 0) this.dodgeCooldown -= dt;
+    if (this.isDodging) {
+      this.dodgeTimer -= dt;
+      if (this.dodgeTimer <= 0) {
+        this.isDodging = false;
+        this.ace.sprite.setAlpha(1);
+      }
+    }
+
+    // Update dodge button visual
+    if (this.dodgeCooldown > 0) {
+      this.dodgeBtn.setAlpha(0.2);
+      this.dodgeBtn.setColor("#666");
+    } else {
+      this.dodgeBtn.setAlpha(0.6);
+      this.dodgeBtn.setColor("#667eea");
+    }
+
+    // During dodge, don't override velocity (dash in progress)
+    if (this.isDodging) return;
+
     const vx = this.joyVector.x * this.ace.speed;
     const vy = this.joyVector.y * this.ace.speed;
 
@@ -851,6 +899,31 @@ export class GameScene extends Phaser.Scene {
     if (ax < -200 || ax > GAME_WIDTH + 200 || ay < -200 || ay > GAME_HEIGHT + 200) {
       this.ace.sprite.setPosition(cx, cy);
     }
+  }
+
+  private tryDodge(): void {
+    if (this.isDodging || this.dodgeCooldown > 0) return;
+
+    this.isDodging = true;
+    this.dodgeTimer = GameScene.DODGE_DURATION;
+    this.dodgeCooldown = GameScene.DODGE_COOLDOWN;
+
+    // Dash in joystick direction, or face direction if stationary
+    let dx = this.joyVector.x;
+    let dy = this.joyVector.y;
+    if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+      // Default dash downward if no input
+      dy = 1;
+    }
+    const len = Math.sqrt(dx * dx + dy * dy);
+    dx /= len;
+    dy /= len;
+
+    this.ace.sprite.setVelocity(dx * GameScene.DODGE_SPEED, dy * GameScene.DODGE_SPEED);
+
+    // Visual: flicker alpha during dodge
+    this.ace.sprite.setAlpha(0.4);
+    sfx.playPickup(); // Reuse pickup sound for dodge
   }
 
   // ================================================================
@@ -1938,6 +2011,7 @@ export class GameScene extends Phaser.Scene {
   // ================================================================
 
   private damageAce(amount: number): void {
+    if (this.isDodging) return; // Invincibility frames during dodge
     this.ace.hp -= amount;
     // Show damage on ace (throttled via popup pool)
     if (amount >= 0.5) {
