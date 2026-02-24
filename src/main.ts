@@ -4,6 +4,14 @@ import { BootScene } from "./scenes/BootScene";
 import { TitleScene } from "./scenes/TitleScene";
 import { GameScene } from "./scenes/GameScene";
 
+// Ensure the body fills the viewport with no margin/scroll
+document.body.style.margin = "0";
+document.body.style.padding = "0";
+document.body.style.overflow = "hidden";
+document.body.style.background = "#0a0a0f";
+document.body.style.width = "100vw";
+document.body.style.height = "100vh";
+
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: GAME_WIDTH,

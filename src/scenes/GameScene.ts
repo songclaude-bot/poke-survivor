@@ -1102,6 +1102,108 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.showWarning(`Wave ${this.waveNumber}`);
     }
+
+    // Formation events from wave 2 onward (every 2 waves, random type)
+    if (this.waveNumber >= 2 && this.waveNumber % 2 === 0) {
+      const formationType = Math.floor(Math.random() * 3);
+      if (formationType === 0) {
+        this.spawnEncirclement(elapsed);
+      } else if (formationType === 1) {
+        this.spawnDiagonalMarch(elapsed);
+      } else {
+        this.spawnRushSwarm(elapsed);
+      }
+    }
+  }
+
+  /** Formation: Enemies spawn in a ring around the player and close in */
+  private spawnEncirclement(elapsed: number): void {
+    const count = 10 + Math.floor(this.waveNumber * 1.5);
+    const radius = 350;
+    this.showWarning("ENCIRCLEMENT!");
+
+    for (let i = 0; i < count; i++) {
+      this.time.delayedCall(i * 80, () => {
+        if (this.enemies.length >= MAX_ENEMIES) return;
+        const angle = (i / count) * Math.PI * 2;
+        const ex = this.ace.sprite.x + Math.cos(angle) * radius;
+        const ey = this.ace.sprite.y + Math.sin(angle) * radius;
+        this.spawnFormationEnemy(ex, ey, elapsed, "chase");
+      });
+    }
+  }
+
+  /** Formation: A line of enemies marches diagonally across the screen */
+  private spawnDiagonalMarch(elapsed: number): void {
+    const count = 12 + Math.floor(this.waveNumber);
+    const marchAngle = Math.random() * Math.PI * 2;
+    const perpAngle = marchAngle + Math.PI / 2;
+    const startDist = 400;
+    this.showWarning("STAMPEDE!");
+
+    for (let i = 0; i < count; i++) {
+      this.time.delayedCall(i * 120, () => {
+        if (this.enemies.length >= MAX_ENEMIES) return;
+        // Stagger along perpendicular axis, offset along march direction
+        const perpOffset = (i - count / 2) * 30;
+        const ex = this.ace.sprite.x + Math.cos(marchAngle) * startDist + Math.cos(perpAngle) * perpOffset;
+        const ey = this.ace.sprite.y + Math.sin(marchAngle) * startDist + Math.sin(perpAngle) * perpOffset;
+        this.spawnFormationEnemy(ex, ey, elapsed, "charge");
+      });
+    }
+  }
+
+  /** Formation: Rush swarm from one direction */
+  private spawnRushSwarm(elapsed: number): void {
+    const count = 15 + Math.floor(this.waveNumber);
+    const swarmAngle = Math.random() * Math.PI * 2;
+    const startDist = 380;
+    this.showWarning("SWARM!");
+
+    for (let i = 0; i < count; i++) {
+      this.time.delayedCall(i * 50, () => {
+        if (this.enemies.length >= MAX_ENEMIES) return;
+        const spread = (Math.random() - 0.5) * 1.2;
+        const ex = this.ace.sprite.x + Math.cos(swarmAngle + spread) * (startDist + Math.random() * 80);
+        const ey = this.ace.sprite.y + Math.sin(swarmAngle + spread) * (startDist + Math.random() * 80);
+        this.spawnFormationEnemy(ex, ey, elapsed, "swarm");
+      });
+    }
+  }
+
+  /** Spawn a single enemy for a formation event — simplified version of spawnEnemy */
+  private spawnFormationEnemy(x: number, y: number, elapsed: number, behavior: EnemyBehavior): void {
+    const tier = elapsed < 60 ? 0 : elapsed < 150 ? 1 : 2;
+    const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
+    const hpMult = (1 + tier * 0.5 + elapsed * 0.005) * cycleMult;
+    const pool = GameScene.ENEMY_POOL[Math.min(tier, 1)];
+    const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
+    const pmdTexKey = `pmd-${pokemonKey}`;
+    const usePmd = this.textures.exists(pmdTexKey);
+
+    const sprite = this.physics.add.sprite(x, y, usePmd ? pmdTexKey : "enemy").setDepth(5);
+    this.enemyGroup.add(sprite);
+    if (usePmd) {
+      sprite.play(`${pokemonKey}-walk-down`);
+      sprite.setTint(0xff8888);
+    }
+    sprite.setScale(0);
+    this.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 200, ease: "Back.easeOut" });
+
+    const hpBarGfx = this.add.graphics().setDepth(6);
+    const baseHp = Math.floor(15 * hpMult);
+    const baseSpd = (40 + tier * 15) * Math.min(cycleMult, 1.5);
+
+    this.enemies.push({
+      sprite, pokemonKey, hp: baseHp, maxHp: baseHp,
+      atk: Math.floor((3 + tier * 2) * cycleMult),
+      speed: baseSpd, behavior, hpBar: hpBarGfx,
+      isElite: false,
+      orbitAngle: behavior === "circle" ? Math.random() * Math.PI * 2 : undefined,
+      chargeTimer: behavior === "charge" ? 2000 + Math.random() * 1500 : undefined,
+      isCharging: false,
+      lastRangedAttack: behavior === "ranged" ? 0 : undefined,
+    });
   }
 
   private spawnMiniBoss(elapsed: number): void {
@@ -1199,9 +1301,10 @@ export class GameScene extends Phaser.Scene {
 
   /** Enemy pokemon pool per tier */
   private static readonly ENEMY_POOL: string[][] = [
-    ["rattata", "zubat"],               // Tier 0: early
-    ["geodude", "gastly", "bulbasaur"], // Tier 1: mid
-    ["pinsir", "charmander"],           // Tier 2: elite
+    ["rattata", "zubat", "caterpie", "weedle", "pidgey", "paras", "oddish", "poliwag", "meowth"],  // Tier 0: weak
+    ["geodude", "gastly", "bulbasaur", "sandshrew", "ekans", "psyduck", "growlithe", "cubone", "drowzee", "machop", "slowpoke", "magnemite", "koffing", "grimer"],  // Tier 1: mid
+    ["pinsir", "charmander", "scyther", "mankey", "eevee", "dratini", "vulpix", "clefairy"],  // Tier 2: strong
+    ["snorlax", "onix", "lapras", "aerodactyl"],  // Tier 3: boss-tier
   ];
 
   private spawnEnemy(elapsed: number): void {
@@ -1249,13 +1352,14 @@ export class GameScene extends Phaser.Scene {
 
     // Assign behavior based on pokemon
     const behaviorMap: Record<string, EnemyBehavior> = {
-      rattata: "swarm",
-      zubat: "circle",
-      gastly: "ranged",
-      geodude: "charge",
-      bulbasaur: "chase",
-      charmander: "charge",
-      pinsir: "charge",
+      rattata: "swarm", caterpie: "swarm", weedle: "swarm", paras: "swarm", oddish: "swarm", meowth: "swarm",
+      zubat: "circle", pidgey: "circle", spearow: "circle", magnemite: "circle", koffing: "circle",
+      gastly: "ranged", psyduck: "ranged", drowzee: "ranged", grimer: "ranged", slowpoke: "ranged",
+      geodude: "charge", machop: "charge", mankey: "charge", pinsir: "charge", charmander: "charge",
+      scyther: "charge", onix: "charge", snorlax: "charge",
+      bulbasaur: "chase", sandshrew: "chase", ekans: "chase", growlithe: "chase", cubone: "chase",
+      poliwag: "chase", vulpix: "chase", eevee: "chase", dratini: "chase", clefairy: "chase",
+      lapras: "chase", aerodactyl: "circle",
     };
     const behavior = behaviorMap[pokemonKey] ?? "chase";
 
@@ -2015,12 +2119,17 @@ export class GameScene extends Phaser.Scene {
     // Change sprite to evolved form
     const newTexKey = `pmd-${stage.spriteKey}`;
     if (this.textures.exists(newTexKey)) {
-      this.ace.sprite.setTexture(newTexKey);
+      // Stop any playing animation first to prevent callbacks from restoring old texture
+      this.ace.sprite.stop();
+      this.ace.sprite.removeAllListeners("animationcomplete");
+      this.ace.sprite.setTexture(newTexKey, 0);
       // Play walk-down animation for the new sprite
       const walkAnim = `${stage.spriteKey}-walk-down`;
       if (this.anims.exists(walkAnim)) {
         this.ace.sprite.play(walkAnim);
       }
+      // Update pokemonKey so future lookups reference evolved form
+      this.ace.pokemonKey = stage.spriteKey;
     }
     this.ace.sprite.setScale(stage.scale);
 
@@ -2618,8 +2727,8 @@ export class GameScene extends Phaser.Scene {
 
     const bossHp = 200 + this.cycleNumber * 80;
     // Boss variety based on cycle
-    const bossPool = ["pinsir", "geodude", "gastly"];
-    const bossKey = bossPool[(this.cycleNumber - 1) % bossPool.length];
+    const bossPool = ["pinsir", "geodude", "gastly", "snorlax", "onix", "lapras", "aerodactyl", "scyther"];
+    const bossKey = bossPool[(this.cycleNumber - 1 + this.waveNumber) % bossPool.length];
     const pmdTexKey = `pmd-${bossKey}`;
     const usePmd = this.textures.exists(pmdTexKey);
 
@@ -2803,9 +2912,14 @@ export class GameScene extends Phaser.Scene {
     const nextCycle = this.cycleNumber + 1;
     const savedLegions = [...this.legions];
 
-    // scene.restart() will destroy all game objects automatically
-    // so we just pass persistent data and let Phaser handle cleanup
-    this.scene.restart({ cycleNumber: nextCycle, legions: savedLegions, starterKey: this.starterKey, totalTime: this.totalSurvivalTime });
+    // Use stop+start instead of restart to ensure clean physics reset
+    this.scene.stop("GameScene");
+    this.scene.start("GameScene", {
+      cycleNumber: nextCycle,
+      legions: savedLegions,
+      starterKey: this.starterKey,
+      totalTime: this.totalSurvivalTime,
+    });
   }
 
   // ================================================================
