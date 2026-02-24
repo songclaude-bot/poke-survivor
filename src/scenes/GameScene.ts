@@ -34,7 +34,7 @@ interface AceData {
   lastAttackTime: number;
 }
 
-type EnemyBehavior = "chase" | "circle" | "charge" | "swarm";
+type EnemyBehavior = "chase" | "circle" | "charge" | "swarm" | "ranged";
 
 interface EnemyData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -53,6 +53,10 @@ interface EnemyData {
   isCharging?: boolean;
   /** Elite enemy flag */
   isElite?: boolean;
+  /** Mini-boss flag */
+  isMini?: boolean;
+  /** For ranged behavior: last ranged attack time */
+  lastRangedAttack?: number;
 }
 
 interface ProjectileData {
@@ -204,6 +208,7 @@ export class GameScene extends Phaser.Scene {
   private companions: CompanionData[] = [];
   private xpGems: XpGem[] = [];
   private items: ItemDrop[] = [];
+  private enemyProjectiles: { sprite: Phaser.GameObjects.Sprite; vx: number; vy: number; damage: number }[] = [];
 
   // -- Phaser groups for collision --
   private enemyGroup!: Phaser.Physics.Arcade.Group;
@@ -341,6 +346,7 @@ export class GameScene extends Phaser.Scene {
   private resetState(): void {
     this.enemies = [];
     this.projectiles = [];
+    this.enemyProjectiles = [];
     this.companions = [];
     this.xpGems = [];
     this.items = [];
@@ -364,6 +370,12 @@ export class GameScene extends Phaser.Scene {
     this.boss = null;
     this.bossSpawned = false;
     this.bossWarningShown = false;
+    this.isDodging = false;
+    this.dodgeTimer = 0;
+    this.dodgeCooldown = 0;
+    this.critChance = 0;
+    this.lifestealRate = 0;
+    this.xpMagnetRange = 60;
     this.worldOffset.set(0, 0);
     this.legionEntities = [];
     // Note: cycleNumber and legions are preserved via init()
@@ -805,6 +817,7 @@ export class GameScene extends Phaser.Scene {
     this.updateCompanions(dt);
     this.updateLegions(dt);
     this.updateProjectiles(dt);
+    this.updateEnemyProjectiles(dt);
     this.updateXpGemMagnet();
     this.updateItems(dt);
     this.updateKillStreak();
@@ -996,8 +1009,64 @@ export class GameScene extends Phaser.Scene {
     this.waveEnemiesRemaining = 5 + this.waveNumber * 3 + this.cycleNumber * 2;
     this.waveText.setText(`Wave ${this.waveNumber}`);
 
+    // Mini-boss every 3 waves starting from wave 3
+    if (this.waveNumber >= 3 && this.waveNumber % 3 === 0) {
+      this.spawnMiniBoss(elapsed);
+    }
+
     // Announce wave
     this.showWarning(`Wave ${this.waveNumber}`);
+  }
+
+  private spawnMiniBoss(elapsed: number): void {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 260;
+    const ex = this.ace.sprite.x + Math.cos(angle) * dist;
+    const ey = this.ace.sprite.y + Math.sin(angle) * dist;
+
+    const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
+    // Pick from tier 1-2 pool
+    const pool = [...GameScene.ENEMY_POOL[1], ...GameScene.ENEMY_POOL[2]];
+    const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
+    const pmdTexKey = `pmd-${pokemonKey}`;
+    const usePmd = this.textures.exists(pmdTexKey);
+
+    const sprite = this.physics.add.sprite(ex, ey, usePmd ? pmdTexKey : "enemy-elite").setDepth(7);
+    this.enemyGroup.add(sprite);
+
+    if (usePmd) {
+      sprite.play(`${pokemonKey}-walk-down`);
+    }
+    sprite.setTint(0xff00ff); // Purple tint for mini-boss
+    sprite.setScale(0);
+    this.tweens.add({
+      targets: sprite,
+      scaleX: 1.7,
+      scaleY: 1.7,
+      duration: 400,
+      ease: "Back.easeOut",
+    });
+
+    const hpBarGfx = this.add.graphics().setDepth(8);
+    const miniHp = Math.round(60 * (1 + elapsed * 0.015) * cycleMult);
+
+    const enemy: EnemyData = {
+      sprite,
+      pokemonKey,
+      hp: miniHp,
+      maxHp: miniHp,
+      atk: Math.round((8 + elapsed * 0.03) * cycleMult),
+      speed: 50 + this.cycleNumber * 5,
+      hpBar: hpBarGfx,
+      behavior: "charge",
+      chargeTimer: 1500 + Math.random() * 1000,
+      isCharging: false,
+      isElite: true,
+      isMini: true,
+    };
+    this.enemies.push(enemy);
+
+    this.showWarning("MINI-BOSS!");
   }
 
   private showWaveClearText(): void {
@@ -1097,7 +1166,7 @@ export class GameScene extends Phaser.Scene {
     const behaviorMap: Record<string, EnemyBehavior> = {
       rattata: "swarm",
       zubat: "circle",
-      gastly: "circle",
+      gastly: "ranged",
       geodude: "charge",
       bulbasaur: "chase",
       charmander: "charge",
@@ -1139,6 +1208,7 @@ export class GameScene extends Phaser.Scene {
       chargeTimer: behavior === "charge" ? 3000 + Math.random() * 2000 : undefined,
       isCharging: false,
       isElite,
+      lastRangedAttack: behavior === "ranged" ? 0 : undefined,
     };
     this.enemies.push(enemy);
   }
@@ -1236,6 +1306,37 @@ export class GameScene extends Phaser.Scene {
           break;
         }
 
+        case "ranged": {
+          // Stay at distance and fire projectiles at player
+          const preferredDist = 120;
+          if (dist < preferredDist - 20) {
+            // Retreat
+            e.sprite.setVelocity(
+              -(dx / dist) * e.speed * 0.6,
+              -(dy / dist) * e.speed * 0.6,
+            );
+          } else if (dist > preferredDist + 40) {
+            // Approach
+            e.sprite.setVelocity(
+              (dx / dist) * e.speed * 0.5,
+              (dy / dist) * e.speed * 0.5,
+            );
+          } else {
+            // In range — strafe slightly
+            e.sprite.setVelocity(
+              -(dy / dist) * e.speed * 0.3,
+              (dx / dist) * e.speed * 0.3,
+            );
+          }
+          // Fire projectile every 2 seconds
+          const now = this.time.now;
+          if (now - (e.lastRangedAttack ?? 0) > 2000) {
+            e.lastRangedAttack = now;
+            this.fireEnemyProjectile(e);
+          }
+          break;
+        }
+
         case "swarm": {
           // Group toward nearest swarm ally, then chase as pack
           let nearestSwarmDx = 0;
@@ -1298,6 +1399,52 @@ export class GameScene extends Phaser.Scene {
     e.sprite.destroy();
     e.hpBar.destroy();
     this.enemies.splice(index, 1);
+  }
+
+  // ================================================================
+  // ENEMY PROJECTILES
+  // ================================================================
+
+  private fireEnemyProjectile(enemy: EnemyData): void {
+    const ax = this.ace.sprite.x;
+    const ay = this.ace.sprite.y;
+    const dx = ax - enemy.sprite.x;
+    const dy = ay - enemy.sprite.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1) return;
+
+    const sprite = this.add.sprite(enemy.sprite.x, enemy.sprite.y, "projectile").setDepth(7);
+    sprite.setTint(0xff4444);
+    sprite.setScale(1.2);
+
+    const speed = 120;
+    const vx = (dx / dist) * speed;
+    const vy = (dy / dist) * speed;
+    this.enemyProjectiles.push({ sprite, vx, vy, damage: enemy.atk * 0.5 });
+  }
+
+  private updateEnemyProjectiles(dt: number): void {
+    for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = this.enemyProjectiles[i];
+      ep.sprite.x += ep.vx * dt;
+      ep.sprite.y += ep.vy * dt;
+
+      // Check distance from ace
+      const dx = ep.sprite.x - this.ace.sprite.x;
+      const dy = ep.sprite.y - this.ace.sprite.y;
+      if (dx * dx + dy * dy < 400) { // 20px radius
+        this.damageAce(ep.damage);
+        ep.sprite.destroy();
+        this.enemyProjectiles.splice(i, 1);
+        continue;
+      }
+
+      // Remove if too far from player
+      if (Math.abs(dx) > 500 || Math.abs(dy) > 600) {
+        ep.sprite.destroy();
+        this.enemyProjectiles.splice(i, 1);
+      }
+    }
   }
 
   // ================================================================
@@ -2301,7 +2448,9 @@ export class GameScene extends Phaser.Scene {
     const by = this.ace.sprite.y + Math.sin(angle) * dist;
 
     const bossHp = 200 + this.cycleNumber * 80;
-    const bossKey = "pinsir";
+    // Boss variety based on cycle
+    const bossPool = ["pinsir", "geodude", "gastly"];
+    const bossKey = bossPool[(this.cycleNumber - 1) % bossPool.length];
     const pmdTexKey = `pmd-${bossKey}`;
     const usePmd = this.textures.exists(pmdTexKey);
 
@@ -2480,6 +2629,7 @@ export class GameScene extends Phaser.Scene {
       e.hpBar.destroy();
     }
     for (const p of this.projectiles) p.sprite.destroy();
+    for (const ep of this.enemyProjectiles) ep.sprite.destroy();
     for (const g of this.xpGems) g.sprite.destroy();
     for (const c of this.companions) c.sprite.destroy();
     for (const le of this.legionEntities) le.gfx.destroy();
