@@ -245,6 +245,11 @@ export class GameScene extends Phaser.Scene {
 
   // -- Evolution --
   private aceEvoStage = 0;
+
+  // -- Combat perks --
+  private critChance = 0;       // 0-1, chance of 2x damage
+  private lifestealRate = 0;    // 0-1, fraction of damage healed
+  private xpMagnetRange = 60;   // Base XP gem pickup range
   private companionEvoStages: Map<string, number> = new Map();
 
   // -- Wave system --
@@ -1329,12 +1334,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onProjectileHitEnemy(proj: ProjectileData, enemy: EnemyData): void {
-    enemy.hp -= proj.damage;
+    // Critical hit check
+    const isCrit = Math.random() < this.critChance;
+    const finalDamage = isCrit ? proj.damage * 2 : proj.damage;
+
+    enemy.hp -= finalDamage;
     proj.pierce--;
     sfx.playHit();
 
-    // Damage popup
-    this.showDamagePopup(enemy.sprite.x, enemy.sprite.y, proj.damage, "#fbbf24");
+    // Lifesteal
+    if (this.lifestealRate > 0 && this.ace.hp < this.ace.maxHp) {
+      const heal = Math.ceil(finalDamage * this.lifestealRate);
+      this.ace.hp = Math.min(this.ace.maxHp, this.ace.hp + heal);
+    }
+
+    // Damage popup (gold for normal, red for crit)
+    this.showDamagePopup(enemy.sprite.x, enemy.sprite.y, isCrit ? `${Math.ceil(finalDamage)} CRIT!` : finalDamage, isCrit ? "#ff4444" : "#fbbf24");
 
     // Flash enemy white
     enemy.sprite.setTint(0xffffff);
@@ -1414,7 +1429,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateXpGemMagnet(): void {
-    const magnetRange = 60 + this.level * 5;
+    const magnetRange = this.xpMagnetRange + this.level * 5;
     const magnetSpeed = 200 + this.level * 10;
     const ax = this.ace.sprite.x;
     const ay = this.ace.sprite.y;
@@ -2481,6 +2496,43 @@ export class GameScene extends Phaser.Scene {
       action: () => {
         this.ace.speed = Math.floor(this.ace.speed * 1.2);
         this.ace.attackCooldown = Math.max(200, this.ace.attackCooldown - 80);
+      },
+    });
+
+    // Choice E: Critical Hit
+    if (this.critChance < 0.5) {
+      choices.push({
+        label: "CRIT +10%",
+        desc: `Crit chance: ${Math.round(this.critChance * 100)}% → ${Math.round((this.critChance + 0.1) * 100)}%`,
+        color: 0xff6b6b,
+        portrait: this.ace.pokemonKey,
+        action: () => {
+          this.critChance = Math.min(0.5, this.critChance + 0.1);
+        },
+      });
+    }
+
+    // Choice F: Lifesteal
+    if (this.lifestealRate < 0.3) {
+      choices.push({
+        label: "LIFESTEAL +5%",
+        desc: `Heal ${Math.round(this.lifestealRate * 100)}% → ${Math.round((this.lifestealRate + 0.05) * 100)}% of damage`,
+        color: 0x22c55e,
+        portrait: this.ace.pokemonKey,
+        action: () => {
+          this.lifestealRate = Math.min(0.3, this.lifestealRate + 0.05);
+        },
+      });
+    }
+
+    // Choice G: XP Magnet Range
+    choices.push({
+      label: "XP MAGNET +30",
+      desc: `Pickup range: ${this.xpMagnetRange} → ${this.xpMagnetRange + 30}`,
+      color: 0x818cf8,
+      portrait: this.ace.pokemonKey,
+      action: () => {
+        this.xpMagnetRange += 30;
       },
     });
 
