@@ -2,6 +2,10 @@
 export const GAME_WIDTH = 390;
 export const GAME_HEIGHT = 844;
 
+/** World size — player roams freely in this space, camera follows */
+export const WORLD_WIDTH = 3000;
+export const WORLD_HEIGHT = 3000;
+
 /** 5-minute cycle */
 export const CYCLE_DURATION_SEC = 300;
 

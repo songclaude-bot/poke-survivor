@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import {
   GAME_WIDTH,
   GAME_HEIGHT,
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
   CYCLE_DURATION_SEC,
   MAX_ENEMIES,
   MAX_PROJECTILES,
@@ -324,6 +326,10 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.resetState();
+
+    // Set up large world
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
     this.createStarfield();
     this.createAce();
     this.createLegions();
@@ -333,6 +339,10 @@ export class GameScene extends Phaser.Scene {
     this.setupCollisions();
     this.createDangerVignette();
     sfx.startBgm();
+
+    // Camera follows player smoothly
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.startFollow(this.ace.sprite, true, 0.1, 0.1);
 
     // Fade in from black
     this.cameras.main.fadeIn(500, 0, 0, 0);
@@ -438,20 +448,56 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createStarfield(): void {
-    // Dungeon floor tile background — changes per cycle
+    // Tile dungeon floor across entire world
     const tileKey = this.getDungeonTileKey();
     if (this.textures.exists(tileKey)) {
       const tex = this.textures.get(tileKey);
       const tw = tex.getSourceImage().width;
       const th = tex.getSourceImage().height;
-      // Tile enough to cover camera movement area
-      for (let ty = -th * 2; ty < GAME_HEIGHT + th * 4; ty += th) {
-        for (let tx = -tw * 2; tx < GAME_WIDTH + tw * 4; tx += tw) {
+      for (let ty = 0; ty < WORLD_HEIGHT; ty += th) {
+        for (let tx = 0; tx < WORLD_WIDTH; tx += tw) {
           this.add.image(tx, ty, tileKey).setOrigin(0, 0).setDepth(-10);
         }
       }
     }
     this.starGfx = this.add.graphics().setDepth(-10);
+    // Add decorations (rocks, bushes) scattered across the world
+    this.placeWorldDecorations();
+  }
+
+  /** Scatter decorative elements across the world for visual variety */
+  private placeWorldDecorations(): void {
+    const gfx = this.add.graphics().setDepth(-5);
+    const rng = new Phaser.Math.RandomDataGenerator([`${this.cycleNumber}`]);
+    const count = 200;
+
+    for (let i = 0; i < count; i++) {
+      const x = rng.between(50, WORLD_WIDTH - 50);
+      const y = rng.between(50, WORLD_HEIGHT - 50);
+      const type = rng.between(0, 3);
+
+      if (type === 0) {
+        // Small rock cluster
+        gfx.fillStyle(0x555566, 0.35);
+        gfx.fillCircle(x, y, 4 + rng.between(0, 3));
+        gfx.fillCircle(x + 5, y + 3, 3);
+      } else if (type === 1) {
+        // Grass tuft
+        gfx.fillStyle(0x3a6b35, 0.25);
+        gfx.fillTriangle(x, y, x - 3, y + 6, x + 3, y + 6);
+        gfx.fillTriangle(x + 4, y + 1, x + 1, y + 7, x + 7, y + 7);
+      } else if (type === 2) {
+        // Cracks / scratches on floor
+        gfx.lineStyle(1, 0x000000, 0.15);
+        const len = 8 + rng.between(0, 12);
+        const angle = rng.realInRange(0, Math.PI);
+        gfx.lineBetween(x, y, x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+      } else {
+        // Small dark spot
+        gfx.fillStyle(0x000000, 0.12);
+        gfx.fillCircle(x, y, 2 + rng.between(0, 2));
+      }
+    }
   }
 
   /** Starter base stats — derived from ALL_STARTERS shared data */
@@ -468,12 +514,12 @@ export class GameScene extends Phaser.Scene {
     const texKey = `pmd-${aceKey}`;
     const usePmd = this.textures.exists(texKey);
     const sprite = this.physics.add.sprite(
-      GAME_WIDTH / 2,
-      GAME_HEIGHT / 2,
+      WORLD_WIDTH / 2,
+      WORLD_HEIGHT / 2,
       usePmd ? texKey : "ace",
     );
     sprite.setDepth(10);
-    sprite.setCollideWorldBounds(false);
+    sprite.setCollideWorldBounds(true);
 
     if (usePmd) {
       sprite.play(`${aceKey}-walk-down`);
@@ -957,14 +1003,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Soft boundary — wrap enemies around player
-    const cx = GAME_WIDTH / 2;
-    const cy = GAME_HEIGHT / 2;
-    const ax = this.ace.sprite.x;
-    const ay = this.ace.sprite.y;
-    if (ax < -200 || ax > GAME_WIDTH + 200 || ay < -200 || ay > GAME_HEIGHT + 200) {
-      this.ace.sprite.setPosition(cx, cy);
-    }
+    // World bounds enforced by physics collideWorldBounds
   }
 
   private tryDodge(): void {
@@ -2212,9 +2251,9 @@ export class GameScene extends Phaser.Scene {
       const lx = ax + Math.cos(legion.orbitAngle) * legion.orbitDist;
       const ly = ay + Math.sin(legion.orbitAngle) * legion.orbitDist;
 
-      // Clamp to screen bounds
-      const clampX = Phaser.Math.Clamp(lx, -100, GAME_WIDTH + 100);
-      const clampY = Phaser.Math.Clamp(ly, -100, GAME_HEIGHT + 100);
+      // Clamp to world bounds
+      const clampX = Phaser.Math.Clamp(lx, 0, WORLD_WIDTH);
+      const clampY = Phaser.Math.Clamp(ly, 0, WORLD_HEIGHT);
 
       // Draw legion — LOD based on index
       legion.gfx.clear();
