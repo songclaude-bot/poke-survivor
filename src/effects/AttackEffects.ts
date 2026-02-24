@@ -105,6 +105,7 @@ export const STARTER_ATTACK_TYPE: Record<string, AttackType> = {
   torchic: "FIRE",
   mudkip: "WATER",
   riolu: "FIGHTING",
+  machop: "FIGHTING",
 };
 
 /** Map enemy pokemon → attack type for enemy projectiles */

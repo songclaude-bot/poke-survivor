@@ -32,6 +32,7 @@ import {
   saveSaveData,
   checkStarterUnlocks,
   ALL_STARTERS,
+  STARTER_SKILLS,
 } from "../data/SaveData";
 
 /* ================================================================
@@ -220,6 +221,12 @@ const EVOLUTION_CHAINS: Record<string, EvolutionStage[]> = {
     { name: "Riolu", spriteKey: "riolu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
     { name: "Lucario ★", spriteKey: "lucario", atkMult: 1.8, hpMult: 1.4, speedMult: 1.3, scale: 1.4 },
   ],
+  // Easter egg
+  machop: [
+    { name: "Machop", spriteKey: "machop", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Machoke ★", spriteKey: "machoke", atkMult: 1.6, hpMult: 1.5, speedMult: 1.1, scale: 1.4 },
+    { name: "Machamp ★★", spriteKey: "machamp", atkMult: 2.5, hpMult: 2.0, speedMult: 1.2, scale: 1.6 },
+  ],
 };
 
 // =================================================================
@@ -315,6 +322,15 @@ export class GameScene extends Phaser.Scene {
   private critChance = 0;       // 0-1, chance of 2x damage
   private lifestealRate = 0;    // 0-1, fraction of damage healed
   private xpMagnetRange = 60;   // Base XP gem pickup range
+
+  // -- Skill effect state --
+  private skillId = "";                 // Active starter skill
+  private flashFireStacks = 0;          // cyndaquil: +1% ATK per kill
+  private speedBoostStacks = 0;         // torchic: +5% every 30s
+  private unburdenTimer = 0;            // treecko: speed buff timer
+  private sturdyAvailable = true;       // geodude: survive one fatal hit
+  private phaseTimer = 0;               // gastly: phase through enemies
+  private adaptabilityMult = 1;         // eevee: 1.2x stat boosts
   private companionEvoStages: Map<string, number> = new Map();
 
   // -- Wave system --
@@ -589,6 +605,23 @@ export class GameScene extends Phaser.Scene {
       attackCooldown: Math.max(400, base.cooldown - (this.cycleNumber - 1) * 30),
       lastAttackTime: 0,
     };
+
+    // Apply starter skill
+    this.skillId = STARTER_SKILLS[aceKey]?.effectId ?? "";
+    this.skillTimer = 0;
+    this.flashFireStacks = 0;
+    this.speedBoostStacks = 0;
+    this.unburdenTimer = 0;
+    this.sturdyAvailable = true;
+    this.phaseTimer = 0;
+    this.adaptabilityMult = this.skillId === "adaptability" ? 1.2 : 1;
+
+    // Guts: +50% ATK, -20% speed
+    if (this.skillId === "guts") {
+      this.ace.atk = Math.floor(this.ace.atk * 1.5);
+      this.ace.speed = Math.floor(this.ace.speed * 0.8);
+      this.ace.attackRange = Math.max(60, this.ace.attackRange - 30); // melee range
+    }
   }
 
   private createLegions(): void {
@@ -818,7 +851,7 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     menuBtn.on("pointerdown", () => {
       sfx.stopBgm();
-      this.scene.start("TitleScene");
+      this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
     });
     menuBtn.on("pointerover", () => menuBtn.setColor("#ff6b6b"));
     menuBtn.on("pointerout", () => menuBtn.setColor("#f43f5e"));
@@ -966,6 +999,7 @@ export class GameScene extends Phaser.Scene {
     this.updateXpGemMagnet();
     this.updateItems(dt);
     this.updateKillStreak();
+    this.updateSkillEffects(dt);
     this.checkAchievements();
     this.updateDangerVignette();
     this.drawUI();
@@ -1141,6 +1175,8 @@ export class GameScene extends Phaser.Scene {
 
   private startNextWave(elapsed: number): void {
     this.waveNumber++;
+    // Sturdy: reset per wave
+    if (this.skillId === "sturdy") this.sturdyAvailable = true;
     // Each wave gets progressively bigger
     this.waveEnemiesRemaining = 5 + this.waveNumber * 3 + this.cycleNumber * 2;
     this.waveText.setText(`Wave ${this.waveNumber}`);
@@ -1846,7 +1882,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
     sprite.setRotation(angle);
 
-    const pierce = 1 + this.aceEvoStage;
+    const pierce = 1 + this.aceEvoStage + (this.skillId === "sheer_force" ? 1 : 0);
     this.projectiles.push({ sprite, damage, pierce });
 
     // Play attack pose animation on the ace pokemon
@@ -1904,9 +1940,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onProjectileHitEnemy(proj: ProjectileData, enemy: EnemyData): void {
-    // Critical hit check
+    // Critical hit check — Inner Focus: 3x crit instead of 2x
     const isCrit = Math.random() < this.critChance;
-    const finalDamage = isCrit ? proj.damage * 2 : proj.damage;
+    const critMult = this.skillId === "inner_focus" ? 3 : 2;
+    let baseDamage = proj.damage;
+
+    // Blaze: +30% ATK when HP below 30%
+    if (this.skillId === "blaze" && this.ace.hp < this.ace.maxHp * 0.3) {
+      baseDamage = Math.floor(baseDamage * 1.3);
+    }
+
+    // Flash Fire: stacking ATK bonus
+    if (this.skillId === "flash_fire" && this.flashFireStacks > 0) {
+      baseDamage = Math.floor(baseDamage * (1 + this.flashFireStacks * 0.01));
+    }
+
+    const finalDamage = isCrit ? baseDamage * critMult : baseDamage;
 
     enemy.hp -= finalDamage;
     proj.pierce--;
@@ -1920,6 +1969,19 @@ export class GameScene extends Phaser.Scene {
     if (this.lifestealRate > 0 && this.ace.hp < this.ace.maxHp) {
       const heal = Math.ceil(finalDamage * this.lifestealRate);
       this.ace.hp = Math.min(this.ace.maxHp, this.ace.hp + heal);
+    }
+
+    // Static: 10% chance to slow enemy for 2 seconds
+    if (this.skillId === "static" && Math.random() < 0.1) {
+      const origSpeed = enemy.speed;
+      enemy.speed = Math.floor(enemy.speed * 0.4);
+      enemy.sprite.setTint(0xffff00);
+      this.time.delayedCall(2000, () => {
+        if (enemy.sprite.active) {
+          enemy.speed = origSpeed;
+          enemy.sprite.clearTint();
+        }
+      });
     }
 
     // Damage popup (gold for normal, red for crit)
@@ -1946,6 +2008,19 @@ export class GameScene extends Phaser.Scene {
     this.kills++;
     this.killStreak++;
     this.lastKillTime = this.time.now;
+
+    // Flash Fire: +1% ATK per kill (max 30%)
+    if (this.skillId === "flash_fire" && this.flashFireStacks < 30) {
+      this.flashFireStacks++;
+    }
+
+    // Unburden: speed +50% for 3s after defeating enemy
+    if (this.skillId === "unburden") {
+      if (this.unburdenTimer <= 0) {
+        this.ace.speed = Math.floor(this.ace.speed * 1.5);
+      }
+      this.unburdenTimer = 3; // refresh timer
+    }
 
     // Check if this was the boss
     const wasBoss = enemy === this.boss;
@@ -2521,11 +2596,43 @@ export class GameScene extends Phaser.Scene {
 
   private damageAce(amount: number): void {
     if (this.isDodging) return; // Invincibility frames during dodge
-    this.ace.hp -= amount;
-    // Show damage on ace (throttled via popup pool)
-    if (amount >= 0.5) {
-      this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y, amount, "#f43f5e");
+
+    // Levitate: phase through enemies — immune to damage
+    if (this.skillId === "levitate" && this.phaseTimer > 0) return;
+
+    // Torrent: -25% damage when HP above 70%
+    let finalAmount = amount;
+    if (this.skillId === "torrent" && this.ace.hp > this.ace.maxHp * 0.7) {
+      finalAmount = amount * 0.75;
     }
+
+    // Leaf Guard: -15% damage when companions are active
+    if (this.skillId === "leaf_guard" && this.companions.length > 0) {
+      finalAmount *= 0.85;
+    }
+
+    this.ace.hp -= finalAmount;
+
+    // Show damage on ace (throttled via popup pool)
+    if (finalAmount >= 0.5) {
+      this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y, finalAmount, "#f43f5e");
+    }
+
+    // Levitate: trigger phase on taking damage (1s immunity)
+    if (this.skillId === "levitate" && this.phaseTimer <= 0) {
+      this.phaseTimer = 1;
+      this.ace.sprite.setAlpha(0.5);
+    }
+
+    // Sturdy: survive one fatal hit per wave
+    if (this.ace.hp <= 0 && this.skillId === "sturdy" && this.sturdyAvailable) {
+      this.ace.hp = 1;
+      this.sturdyAvailable = false;
+      this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 20, "STURDY!", "#fbbf24");
+      this.cameras.main.flash(200, 255, 200, 0);
+      return;
+    }
+
     if (this.ace.hp <= 0) {
       this.ace.hp = 0;
       this.onAceDeath();
@@ -2616,7 +2723,7 @@ export class GameScene extends Phaser.Scene {
 
     this.input.once("pointerdown", () => {
       // Return to title screen on death
-      this.scene.start("TitleScene");
+      this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
     });
   }
 
@@ -3106,39 +3213,45 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
+    // Adaptability multiplier for stat boosts
+    const am = this.adaptabilityMult; // 1.2x for eevee, 1x for others
+
     // Choice B: Boost ATK
+    const atkBoost = 1 + 0.25 * am;
     choices.push({
-      label: "ATK +25%",
-      desc: `${this.ace.atk} → ${Math.floor(this.ace.atk * 1.25)}`,
+      label: `ATK +${Math.round(25 * am)}%`,
+      desc: `${this.ace.atk} → ${Math.floor(this.ace.atk * atkBoost)}`,
       color: 0xf43f5e,
       portrait: this.ace.pokemonKey,
       action: () => {
-        this.ace.atk = Math.floor(this.ace.atk * 1.25);
-        this.companions.forEach((c) => (c.atk = Math.floor(c.atk * 1.15)));
+        this.ace.atk = Math.floor(this.ace.atk * atkBoost);
+        this.companions.forEach((c) => (c.atk = Math.floor(c.atk * (1 + 0.15 * am))));
       },
     });
 
     // Choice C: Boost HP + heal
+    const hpBoost = Math.floor(30 * am);
     choices.push({
-      label: "MAX HP +30",
-      desc: `Heal to full (${this.ace.maxHp + 30} HP)`,
+      label: `MAX HP +${hpBoost}`,
+      desc: `Heal to full (${this.ace.maxHp + hpBoost} HP)`,
       color: 0x3bc95e,
       portrait: this.ace.pokemonKey,
       action: () => {
-        this.ace.maxHp += 30;
+        this.ace.maxHp += hpBoost;
         this.ace.hp = this.ace.maxHp;
       },
     });
 
     // Choice D: Speed + Range
+    const spdBoost = 1 + 0.2 * am;
     choices.push({
-      label: "SPEED +20%",
+      label: `SPEED +${Math.round(20 * am)}%`,
       desc: `Move faster, attack faster`,
       color: 0xfbbf24,
       portrait: this.ace.pokemonKey,
       action: () => {
-        this.ace.speed = Math.floor(this.ace.speed * 1.2);
-        this.ace.attackCooldown = Math.max(200, this.ace.attackCooldown - 80);
+        this.ace.speed = Math.floor(this.ace.speed * spdBoost);
+        this.ace.attackCooldown = Math.max(200, this.ace.attackCooldown - Math.floor(80 * am));
       },
     });
 
@@ -3259,6 +3372,83 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ================================================================
+  // STARTER SKILL RUNTIME EFFECTS
+  // ================================================================
+
+  private skillTimer = 0; // General-purpose skill timer (seconds)
+
+  private updateSkillEffects(dt: number): void {
+    if (!this.skillId) return;
+    this.skillTimer += dt;
+
+    switch (this.skillId) {
+      // Bulbasaur — Overgrow: regen 1% max HP every 3 seconds
+      case "overgrow":
+        if (this.skillTimer >= 3) {
+          this.skillTimer -= 3;
+          if (this.ace.hp < this.ace.maxHp) {
+            const heal = Math.max(1, Math.floor(this.ace.maxHp * 0.01));
+            this.ace.hp = Math.min(this.ace.maxHp, this.ace.hp + heal);
+          }
+        }
+        break;
+
+      // Torchic — Speed Boost: +5% attack speed every 30 seconds
+      case "speed_boost":
+        if (this.skillTimer >= 30) {
+          this.skillTimer -= 30;
+          this.speedBoostStacks++;
+          this.ace.attackCooldown = Math.max(200, Math.floor(this.ace.attackCooldown * 0.95));
+          this.showDamagePopup(this.ace.sprite.x, this.ace.sprite.y - 30, "SPD BOOST!", "#fbbf24");
+        }
+        break;
+
+      // Treecko — Unburden: speed buff timer countdown
+      case "unburden":
+        if (this.unburdenTimer > 0) {
+          this.unburdenTimer -= dt;
+          if (this.unburdenTimer <= 0) {
+            // Remove speed buff
+            this.ace.speed = Math.floor(this.ace.speed / 1.5);
+            this.unburdenTimer = 0;
+          }
+        }
+        break;
+
+      // Gastly — Levitate: phase timer countdown
+      case "levitate":
+        if (this.phaseTimer > 0) {
+          this.phaseTimer -= dt;
+          this.ace.sprite.setAlpha(0.5);
+          if (this.phaseTimer <= 0) {
+            this.ace.sprite.setAlpha(1);
+            this.phaseTimer = 0;
+          }
+        }
+        break;
+
+      // Mudkip — Damp: slow nearby enemies by 20%
+      case "damp":
+        for (const e of this.enemies) {
+          if (!e.sprite.active) continue;
+          const dist = Phaser.Math.Distance.Between(
+            this.ace.sprite.x, this.ace.sprite.y,
+            e.sprite.x, e.sprite.y,
+          );
+          if (dist < 120) {
+            // Apply slow by reducing velocity (applied each frame)
+            const body = e.sprite.body as Phaser.Physics.Arcade.Body;
+            if (body) {
+              body.velocity.x *= 0.8;
+              body.velocity.y *= 0.8;
+            }
+          }
+        }
+        break;
+    }
+  }
+
   private showStreakText(streak: number): void {
     const labels = ["", "", "", "", "", "", "", "", "", "",
       "COMBO x10!", "", "", "", "", "COMBO x15!", "", "", "", "",
@@ -3371,6 +3561,16 @@ export class GameScene extends Phaser.Scene {
   getPartySize(): number { return 1 + this.companions.length; }
   getCycle(): number { return this.cycleNumber; }
   getStreak(): number { return this.killStreak; }
+
+  /** Calculate coins earned from this run */
+  private getEarnedCoins(): number {
+    // Base: 1 coin per 10 kills + 5 per wave + 10 per cycle
+    const killCoins = Math.floor(this.kills / 10);
+    const waveCoins = this.waveNumber * 5;
+    const cycleCoins = (this.cycleNumber - 1) * 10;
+    const levelCoins = this.level * 2;
+    return killCoins + waveCoins + cycleCoins + levelCoins;
+  }
 
   private checkAchievements(): void {
     for (const ach of ACHIEVEMENTS) {

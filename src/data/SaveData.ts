@@ -1,5 +1,5 @@
 /**
- * SaveData — Shared save/load + starter definitions.
+ * SaveData — Shared save/load + starter definitions + skill system.
  */
 
 const STORAGE_KEY = "poke-survivor-data";
@@ -39,12 +39,110 @@ export const ALL_STARTERS: StarterDef[] = [
   { key: "mudkip",     name: "Mudkip",     color: "#60a5fa", hp: 115, atk: 10, speed: 150, range: 115, cooldown: 850, unlockCondition: "Reach Wave 10", unlockAchievement: "wave_10" },
   // Gen 4
   { key: "riolu",      name: "Riolu",      color: "#6366f1", hp: 95,  atk: 13, speed: 170, range: 110, cooldown: 700, unlockCondition: "Reach Cycle 5", unlockAchievement: "cycle_5" },
+  // Easter egg — Machop line (unlocked via lobby easter egg)
+  { key: "machop",     name: "Machop",     color: "#ff6b35", hp: 120, atk: 15, speed: 145, range: 80,  cooldown: 650, unlockCondition: "Hidden Easter Egg", unlockAchievement: "machop_egg" },
 ];
+
+// ================================================================
+// STARTER SKILLS — Unique passive abilities per starter
+// ================================================================
+
+export interface StarterSkill {
+  name: string;
+  desc: string;
+  /** Skill effect ID — applied in GameScene */
+  effectId: string;
+}
+
+/** Each starter's unique passive skill */
+export const STARTER_SKILLS: Record<string, StarterSkill> = {
+  pikachu: {
+    name: "Static",
+    desc: "10% chance to paralyze (slow) enemies on hit",
+    effectId: "static",
+  },
+  charmander: {
+    name: "Blaze",
+    desc: "ATK +30% when HP below 30%",
+    effectId: "blaze",
+  },
+  squirtle: {
+    name: "Torrent",
+    desc: "Damage taken -25% when HP above 70%",
+    effectId: "torrent",
+  },
+  bulbasaur: {
+    name: "Overgrow",
+    desc: "Regenerate 1% max HP every 3 seconds",
+    effectId: "overgrow",
+  },
+  gastly: {
+    name: "Levitate",
+    desc: "Phase through enemies for 1s after taking damage",
+    effectId: "levitate",
+  },
+  geodude: {
+    name: "Sturdy",
+    desc: "Survive one fatal hit per wave (HP → 1)",
+    effectId: "sturdy",
+  },
+  eevee: {
+    name: "Adaptability",
+    desc: "Stat boosts from level-ups are 20% stronger",
+    effectId: "adaptability",
+  },
+  chikorita: {
+    name: "Leaf Guard",
+    desc: "Allies in range take 15% less damage",
+    effectId: "leaf_guard",
+  },
+  cyndaquil: {
+    name: "Flash Fire",
+    desc: "Each kill grants +1% ATK (stacks up to 30%)",
+    effectId: "flash_fire",
+  },
+  totodile: {
+    name: "Sheer Force",
+    desc: "Projectiles pierce through 1 extra enemy",
+    effectId: "sheer_force",
+  },
+  treecko: {
+    name: "Unburden",
+    desc: "Speed +50% for 3s after defeating an enemy",
+    effectId: "unburden",
+  },
+  torchic: {
+    name: "Speed Boost",
+    desc: "Attack speed increases by 5% every 30 seconds",
+    effectId: "speed_boost",
+  },
+  mudkip: {
+    name: "Damp",
+    desc: "Enemies near you are slowed by 20%",
+    effectId: "damp",
+  },
+  riolu: {
+    name: "Inner Focus",
+    desc: "Critical hits deal 3x damage instead of 2x",
+    effectId: "inner_focus",
+  },
+  machop: {
+    name: "Guts",
+    desc: "ATK +50% but -20% speed. Melee range hits all nearby enemies",
+    effectId: "guts",
+  },
+};
+
+// ================================================================
+// SAVE DATA
+// ================================================================
 
 export interface SaveData {
   highScore: { kills: number; wave: number; level: number; cycle: number; totalTime?: number };
   unlockedAchievements: string[];
   unlockedStarters: string[];
+  /** Coins earned from runs */
+  coins: number;
 }
 
 export function loadSaveData(): SaveData {
@@ -52,10 +150,11 @@ export function loadSaveData(): SaveData {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      // Migrate: ensure unlockedStarters exists
+      // Migrate: ensure fields exist
       if (!data.unlockedStarters) {
         data.unlockedStarters = ["pikachu", "charmander", "squirtle"];
       }
+      if (data.coins === undefined) data.coins = 0;
       return data;
     }
   } catch { /* ignore */ }
@@ -63,6 +162,7 @@ export function loadSaveData(): SaveData {
     highScore: { kills: 0, wave: 0, level: 0, cycle: 1, totalTime: 0 },
     unlockedAchievements: [],
     unlockedStarters: ["pikachu", "charmander", "squirtle"],
+    coins: 0,
   };
 }
 

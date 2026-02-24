@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from "./config";
 import { BootScene } from "./scenes/BootScene";
 import { TitleScene } from "./scenes/TitleScene";
+import { LobbyScene } from "./scenes/LobbyScene";
 import { GameScene } from "./scenes/GameScene";
 
 // Ensure the body fills the viewport with no margin/scroll
@@ -28,7 +29,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, TitleScene, GameScene],
+  scene: [BootScene, TitleScene, LobbyScene, GameScene],
   input: {
     activePointers: 2,
   },

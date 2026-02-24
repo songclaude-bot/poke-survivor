@@ -1,5 +1,47 @@
 # Poke Survivor - Development Log
 
+## 2026-02-24 (Session 7) — Lobby Scene, Coin Economy, Unique Skills & Machop Easter Egg
+
+### Changes
+- **LobbyScene**: New hub between runs (Title → Lobby → Game → death → Lobby)
+  - Coin counter display with persistent savings
+  - Starter card selection with swipe navigation (arrows + swipe gesture)
+  - Passive skill description per starter shown on card
+  - Stat bars (HP, ATK, SPD, RNG) with visual fill
+  - High score, achievement count, Pokédex progress display
+  - BGM plays in lobby
+- **Coin economy**: Earn coins per run (kills/10 + waves×5 + (cycle-1)×10 + level×2)
+  - Coins persist via SaveData localStorage
+  - Displayed on death screen and lobby
+- **15 unique starter skills** (passive abilities):
+  - Static (Pikachu): 10% paralyze on hit
+  - Blaze (Charmander): ATK +30% when HP < 30%
+  - Torrent (Squirtle): -25% damage taken when HP > 70%
+  - Overgrow (Bulbasaur): Regen 1% max HP every 3s
+  - Levitate (Gastly): 1s phase-through after taking damage
+  - Sturdy (Geodude): Survive one fatal hit per wave
+  - Adaptability (Eevee): Level-up stat boosts 20% stronger
+  - Leaf Guard (Chikorita): -15% damage with companions
+  - Flash Fire (Cyndaquil): +1% ATK per kill (max 30%)
+  - Sheer Force (Totodile): +1 projectile pierce
+  - Unburden (Treecko): +50% speed for 3s after kill
+  - Speed Boost (Torchic): +5% attack speed every 30s
+  - Damp (Mudkip): Slow nearby enemies 20%
+  - Inner Focus (Riolu): 3x crit damage instead of 2x
+  - Guts (Machop): ATK +50%, speed -20%, melee range
+- **Machop easter egg**: Hidden semi-transparent Machop in lobby corner, tap 5× to unlock
+  - Machop → Machoke → Machamp evolution chain
+  - FIGHTING type attacks
+- **TitleScene simplified**: Now just splash screen → LobbyScene
+
+### Technical Notes
+- Skills use effectId-based system — init in createAce(), runtime in update/damage/kill handlers
+- updateSkillEffects() runs each frame for periodic effects (regen, speed boost timer, etc.)
+- Adaptability multiplier applies to all level-up stat choices (ATK/HP/SPD)
+- Damp applies velocity reduction per-frame to nearby enemies
+
+---
+
 ## 2026-02-24 (Session 6) — Massive Pokemon Expansion (200+ Species)
 
 ### Changes
