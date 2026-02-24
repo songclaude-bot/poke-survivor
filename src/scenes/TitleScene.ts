@@ -184,8 +184,9 @@ export class TitleScene extends Phaser.Scene {
         const data = JSON.parse(raw);
         const hs = data.highScore;
         if (hs && hs.kills > 0) {
+          const cycleInfo = hs.cycle > 1 ? ` / Cycle ${hs.cycle}` : "";
           this.add
-            .text(GAME_WIDTH / 2, GAME_HEIGHT - 120, `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
+            .text(GAME_WIDTH / 2, GAME_HEIGHT - 120, `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}${cycleInfo}`, {
               fontFamily: "monospace",
               fontSize: "10px",
               color: "#fbbf24",
@@ -209,7 +210,7 @@ export class TitleScene extends Phaser.Scene {
 
     // Version
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v1.0.0 — Release", {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v1.2.0 — Endless", {
         fontFamily: "monospace",
         fontSize: "9px",
         color: "#444",

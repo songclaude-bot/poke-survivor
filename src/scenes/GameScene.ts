@@ -108,6 +108,7 @@ interface CyclePassData {
   cycleNumber?: number;
   legions?: LegionData[];
   starterKey?: string;
+  totalTime?: number;
 }
 
 // -- Evolution data --
@@ -177,7 +178,7 @@ const ACHIEVEMENTS: Achievement[] = [
 const STORAGE_KEY = "poke-survivor-data";
 
 interface SaveData {
-  highScore: { kills: number; wave: number; level: number; cycle: number };
+  highScore: { kills: number; wave: number; level: number; cycle: number; totalTime?: number };
   unlockedAchievements: string[];
 }
 
@@ -186,7 +187,7 @@ function loadSaveData(): SaveData {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
-  return { highScore: { kills: 0, wave: 0, level: 0, cycle: 1 }, unlockedAchievements: [] };
+  return { highScore: { kills: 0, wave: 0, level: 0, cycle: 1, totalTime: 0 }, unlockedAchievements: [] };
 }
 
 function saveSaveData(data: SaveData): void {
@@ -242,6 +243,7 @@ export class GameScene extends Phaser.Scene {
   private isPaused = false;
   private killStreak = 0;
   private lastKillTime = 0;
+  private totalSurvivalTime = 0; // Total time across all cycles
 
   // -- Evolution --
   private aceEvoStage = 0;
@@ -304,6 +306,7 @@ export class GameScene extends Phaser.Scene {
     if (data?.cycleNumber) this.cycleNumber = data.cycleNumber;
     if (data?.legions) this.legions = [...data.legions];
     if (data?.starterKey) this.starterKey = data.starterKey;
+    if (data?.totalTime) this.totalSurvivalTime = data.totalTime;
   }
 
   create(): void {
@@ -791,6 +794,7 @@ export class GameScene extends Phaser.Scene {
   private updateTimer(dt: number): void {
     this.cycleTimer -= dt;
     if (this.cycleTimer <= 0) this.cycleTimer = 0;
+    this.totalSurvivalTime += dt;
 
     const elapsed = CYCLE_DURATION_SEC - this.cycleTimer;
 
@@ -890,7 +894,7 @@ export class GameScene extends Phaser.Scene {
     // Check if current wave is cleared
     if (this.waveEnemiesRemaining <= 0 && this.enemies.length === 0) {
       this.inWaveRest = true;
-      this.waveRestTimer = 3; // 3 second rest between waves
+      this.waveRestTimer = Math.max(1, 3 - (this.cycleNumber - 1) * 0.3); // Shorter rests at higher cycles
       this.showWaveClearText();
       return;
     }
@@ -899,12 +903,13 @@ export class GameScene extends Phaser.Scene {
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
 
-    const spawnInterval = Math.max(0.25, 1.2 - this.waveNumber * 0.08);
+    const cycleSpeedUp = Math.min(0.4, (this.cycleNumber - 1) * 0.08);
+    const spawnInterval = Math.max(0.15, 1.2 - this.waveNumber * 0.08 - cycleSpeedUp);
     this.spawnTimer = spawnInterval;
 
     if (this.enemies.length >= MAX_ENEMIES || this.waveEnemiesRemaining <= 0) return;
 
-    const batchSize = Math.min(this.waveEnemiesRemaining, 1 + Math.floor(this.waveNumber / 4));
+    const batchSize = Math.min(this.waveEnemiesRemaining, 1 + Math.floor(this.waveNumber / 4) + Math.floor(this.cycleNumber / 3));
     for (let i = 0; i < batchSize; i++) {
       if (this.waveEnemiesRemaining <= 0) break;
       this.spawnEnemy(elapsed);
@@ -1027,8 +1032,9 @@ export class GameScene extends Phaser.Scene {
     };
     const behavior = behaviorMap[pokemonKey] ?? "chase";
 
-    // Elite chance: 20% after wave 3, scales with wave number
-    const isElite = this.waveNumber >= 3 && Math.random() < Math.min(0.35, 0.15 + this.waveNumber * 0.01);
+    // Elite chance: scales with wave number and cycle
+    const eliteChance = Math.min(0.5, 0.15 + this.waveNumber * 0.01 + (this.cycleNumber - 1) * 0.05);
+    const isElite = this.waveNumber >= 3 && Math.random() < eliteChance;
 
     const eliteMult = isElite ? 2.5 : 1;
     const baseHp = Math.round(15 * hpMult * eliteMult);
@@ -1971,14 +1977,16 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0);
 
     const evoName = EVOLUTION_CHAINS[this.ace.pokemonKey]?.[this.aceEvoStage]?.name ?? this.ace.pokemonKey;
-    const survivalTime = this.formatTime(CYCLE_DURATION_SEC - this.cycleTimer);
+    const totalTimeStr = this.formatTime(this.totalSurvivalTime);
+    const diffLabel = this.getDifficultyLabel();
     const statsLines = [
       `${evoName}  Lv.${this.level}`,
       ``,
       `Kills: ${this.kills}    Wave: ${this.waveNumber}`,
       `Cycle: ${this.cycleNumber}    Party: ${this.companions.length + 1}`,
-      `Time: ${survivalTime}`,
-    ];
+      `Total Time: ${totalTimeStr}`,
+      diffLabel ? `Difficulty: ${diffLabel}` : "",
+    ].filter(Boolean);
     this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 15, statsLines.join("\n"), {
         fontFamily: "monospace",
@@ -2033,6 +2041,14 @@ export class GameScene extends Phaser.Scene {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  private getDifficultyLabel(): string {
+    if (this.cycleNumber >= 7) return "INFERNO";
+    if (this.cycleNumber >= 5) return "NIGHTMARE";
+    if (this.cycleNumber >= 3) return "HARD";
+    if (this.cycleNumber >= 2) return "NORMAL+";
+    return "";
   }
 
   // ================================================================
@@ -2092,7 +2108,9 @@ export class GameScene extends Phaser.Scene {
     this.killText.setColor(this.killStreak >= 10 ? "#fbbf24" : "#888");
     this.levelText.setText(`Lv.${this.level}`);
     const legionInfo = this.legions.length > 0 ? ` [${this.legions.length}]` : "";
-    this.cycleText.setText(`Cycle ${this.cycleNumber}${legionInfo}`);
+    const diffLabel = this.getDifficultyLabel();
+    this.cycleText.setText(`Cycle ${this.cycleNumber}${legionInfo} ${diffLabel}`);
+    this.cycleText.setColor(this.cycleNumber >= 5 ? "#f43f5e" : this.cycleNumber >= 3 ? "#fbbf24" : "#888");
 
     // Minimap (bottom-right corner)
     this.drawMinimap();
@@ -2394,7 +2412,7 @@ export class GameScene extends Phaser.Scene {
     this.ace.sprite.destroy();
 
     // Restart scene with persistent data
-    this.scene.restart({ cycleNumber: nextCycle, legions: savedLegions, starterKey: this.starterKey });
+    this.scene.restart({ cycleNumber: nextCycle, legions: savedLegions, starterKey: this.starterKey, totalTime: this.totalSurvivalTime });
   }
 
   // ================================================================
@@ -2795,6 +2813,7 @@ export class GameScene extends Phaser.Scene {
     if (this.waveNumber > hs.wave) { hs.wave = this.waveNumber; changed = true; }
     if (this.level > hs.level) { hs.level = this.level; changed = true; }
     if (this.cycleNumber > hs.cycle) { hs.cycle = this.cycleNumber; changed = true; }
+    if (this.totalSurvivalTime > (hs.totalTime ?? 0)) { hs.totalTime = Math.floor(this.totalSurvivalTime); changed = true; }
     if (changed) saveSaveData(this.saveData);
   }
 }
