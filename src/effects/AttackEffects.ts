@@ -95,6 +95,16 @@ export const STARTER_ATTACK_TYPE: Record<string, AttackType> = {
   charmander: "FIRE",
   squirtle: "WATER",
   bulbasaur: "GRASS",
+  gastly: "GHOST",
+  geodude: "ROCK",
+  eevee: "NORMAL",
+  chikorita: "GRASS",
+  cyndaquil: "FIRE",
+  totodile: "WATER",
+  treecko: "GRASS",
+  torchic: "FIRE",
+  mudkip: "WATER",
+  riolu: "FIGHTING",
 };
 
 /** Map enemy pokemon → attack type for enemy projectiles */

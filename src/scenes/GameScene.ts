@@ -146,30 +146,79 @@ interface EvolutionStage {
 }
 
 const EVOLUTION_CHAINS: Record<string, EvolutionStage[]> = {
+  // Gen 1 starters — full 3-stage
   pikachu: [
     { name: "Pikachu", spriteKey: "pikachu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.5 },
     { name: "Raichu ★", spriteKey: "raichu", atkMult: 1.5, hpMult: 1.3, speedMult: 1.15, scale: 1.5 },
     { name: "Raichu GX ★★", spriteKey: "raichu", atkMult: 2.2, hpMult: 1.8, speedMult: 1.3, scale: 1.7 },
   ],
-  squirtle: [
-    { name: "Squirtle", spriteKey: "squirtle", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Wartortle ★", spriteKey: "wartortle", atkMult: 1.5, hpMult: 1.4, speedMult: 1.1, scale: 1.3 },
-  ],
   charmander: [
     { name: "Charmander", spriteKey: "charmander", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Charmeleon ★", spriteKey: "charmeleon", atkMult: 1.6, hpMult: 1.3, speedMult: 1.15, scale: 1.3 },
+    { name: "Charmeleon ★", spriteKey: "charmeleon", atkMult: 1.5, hpMult: 1.3, speedMult: 1.15, scale: 1.3 },
+    { name: "Charizard ★★", spriteKey: "charizard", atkMult: 2.2, hpMult: 1.7, speedMult: 1.3, scale: 1.5 },
+  ],
+  squirtle: [
+    { name: "Squirtle", spriteKey: "squirtle", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Wartortle ★", spriteKey: "wartortle", atkMult: 1.4, hpMult: 1.4, speedMult: 1.1, scale: 1.3 },
+    { name: "Blastoise ★★", spriteKey: "blastoise", atkMult: 2.0, hpMult: 2.0, speedMult: 1.2, scale: 1.5 },
   ],
   bulbasaur: [
     { name: "Bulbasaur", spriteKey: "bulbasaur", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
     { name: "Ivysaur ★", spriteKey: "ivysaur", atkMult: 1.4, hpMult: 1.5, speedMult: 1.1, scale: 1.3 },
+    { name: "Venusaur ★★", spriteKey: "venusaur", atkMult: 1.9, hpMult: 2.2, speedMult: 1.2, scale: 1.5 },
   ],
   gastly: [
     { name: "Gastly", spriteKey: "gastly", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
     { name: "Haunter ★", spriteKey: "haunter", atkMult: 1.7, hpMult: 1.2, speedMult: 1.2, scale: 1.3 },
+    { name: "Gengar ★★", spriteKey: "gengar", atkMult: 2.5, hpMult: 1.5, speedMult: 1.4, scale: 1.5 },
   ],
   geodude: [
     { name: "Geodude", spriteKey: "geodude", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
     { name: "Graveler ★", spriteKey: "graveler", atkMult: 1.4, hpMult: 1.6, speedMult: 1.0, scale: 1.3 },
+    { name: "Golem ★★", spriteKey: "golem", atkMult: 1.9, hpMult: 2.3, speedMult: 1.0, scale: 1.5 },
+  ],
+  // Gen 1 extra
+  eevee: [
+    { name: "Eevee", spriteKey: "eevee", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Jolteon ★", spriteKey: "jolteon", atkMult: 1.6, hpMult: 1.1, speedMult: 1.4, scale: 1.3 },
+    { name: "Flareon ★★", spriteKey: "flareon", atkMult: 2.3, hpMult: 1.4, speedMult: 1.2, scale: 1.4 },
+  ],
+  // Gen 2 starters
+  chikorita: [
+    { name: "Chikorita", spriteKey: "chikorita", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Bayleef ★", spriteKey: "bayleef", atkMult: 1.3, hpMult: 1.5, speedMult: 1.1, scale: 1.3 },
+    { name: "Meganium ★★", spriteKey: "meganium", atkMult: 1.7, hpMult: 2.3, speedMult: 1.2, scale: 1.5 },
+  ],
+  cyndaquil: [
+    { name: "Cyndaquil", spriteKey: "cyndaquil", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Quilava ★", spriteKey: "quilava", atkMult: 1.6, hpMult: 1.2, speedMult: 1.2, scale: 1.3 },
+    { name: "Typhlosion ★★", spriteKey: "typhlosion", atkMult: 2.4, hpMult: 1.6, speedMult: 1.3, scale: 1.5 },
+  ],
+  totodile: [
+    { name: "Totodile", spriteKey: "totodile", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Croconaw ★", spriteKey: "croconaw", atkMult: 1.5, hpMult: 1.4, speedMult: 1.1, scale: 1.3 },
+    { name: "Feraligatr ★★", spriteKey: "feraligatr", atkMult: 2.2, hpMult: 1.9, speedMult: 1.2, scale: 1.5 },
+  ],
+  // Gen 3 starters
+  treecko: [
+    { name: "Treecko", spriteKey: "treecko", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Grovyle ★", spriteKey: "grovyle", atkMult: 1.5, hpMult: 1.2, speedMult: 1.3, scale: 1.3 },
+    { name: "Sceptile ★★", spriteKey: "sceptile", atkMult: 2.2, hpMult: 1.5, speedMult: 1.5, scale: 1.5 },
+  ],
+  torchic: [
+    { name: "Torchic", spriteKey: "torchic", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Combusken ★", spriteKey: "combusken", atkMult: 1.6, hpMult: 1.3, speedMult: 1.2, scale: 1.3 },
+    { name: "Blaziken ★★", spriteKey: "blaziken", atkMult: 2.4, hpMult: 1.7, speedMult: 1.3, scale: 1.5 },
+  ],
+  mudkip: [
+    { name: "Mudkip", spriteKey: "mudkip", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Marshtomp ★", spriteKey: "marshtomp", atkMult: 1.4, hpMult: 1.5, speedMult: 1.1, scale: 1.3 },
+    { name: "Swampert ★★", spriteKey: "swampert", atkMult: 2.0, hpMult: 2.2, speedMult: 1.1, scale: 1.5 },
+  ],
+  // Gen 4
+  riolu: [
+    { name: "Riolu", spriteKey: "riolu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Lucario ★", spriteKey: "lucario", atkMult: 1.8, hpMult: 1.4, speedMult: 1.3, scale: 1.4 },
   ],
 };
 
@@ -1174,10 +1223,10 @@ export class GameScene extends Phaser.Scene {
 
   /** Spawn a single enemy for a formation event — simplified version of spawnEnemy */
   private spawnFormationEnemy(x: number, y: number, elapsed: number, behavior: EnemyBehavior): void {
-    const tier = elapsed < 60 ? 0 : elapsed < 150 ? 1 : 2;
+    const tier = elapsed < 45 ? 0 : elapsed < 90 ? 1 : elapsed < 150 ? 2 : elapsed < 220 ? 3 : 4;
     const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
     const hpMult = (1 + tier * 0.5 + elapsed * 0.005) * cycleMult;
-    const pool = GameScene.ENEMY_POOL[Math.min(tier, 1)];
+    const pool = GameScene.ENEMY_POOL[Math.min(tier, GameScene.ENEMY_POOL.length - 1)];
     const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
     const pmdTexKey = pacTexKey(pokemonKey);
     const usePmd = this.textures.exists(pmdTexKey);
@@ -1215,7 +1264,7 @@ export class GameScene extends Phaser.Scene {
 
     const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
     // Pick from tier 1-2 pool
-    const pool = [...GameScene.ENEMY_POOL[1], ...GameScene.ENEMY_POOL[2]];
+    const pool = [...GameScene.ENEMY_POOL[2], ...GameScene.ENEMY_POOL[3]];
     const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
     const pmdTexKey = pacTexKey(pokemonKey);
     const usePmd = this.textures.exists(pmdTexKey);
@@ -1300,13 +1349,81 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  /** Enemy pokemon pool per tier */
+  /** Enemy pokemon pool per tier — 6 tiers covering Gen 1~5 */
   private static readonly ENEMY_POOL: string[][] = [
-    ["rattata", "zubat", "caterpie", "weedle", "pidgey", "paras", "oddish", "poliwag", "meowth"],  // Tier 0: weak
-    ["geodude", "gastly", "bulbasaur", "sandshrew", "ekans", "psyduck", "growlithe", "cubone", "drowzee", "machop", "slowpoke", "magnemite", "koffing", "grimer"],  // Tier 1: mid
-    ["pinsir", "charmander", "scyther", "mankey", "eevee", "dratini", "vulpix", "clefairy"],  // Tier 2: strong
-    ["snorlax", "onix", "lapras", "aerodactyl"],  // Tier 3: boss-tier
+    // Tier 0: weak/common — bugs, rodents, early routes
+    ["rattata", "caterpie", "weedle", "pidgey", "paras", "oddish", "meowth", "sentret", "hoothoot",
+     "ledyba", "spinarak", "wurmple", "zigzagoon", "poochyena", "starly", "bidoof", "lillipup",
+     "pidove", "sewaddle", "venipede", "cottonee"],
+    // Tier 1: uncommon — mid-game pokemon
+    ["zubat", "sandshrew", "ekans", "psyduck", "growlithe", "cubone", "drowzee", "machop",
+     "slowpoke", "magnemite", "koffing", "grimer", "poliwag", "bellsprout", "tentacool", "ponyta",
+     "seel", "voltorb", "horsea", "goldeen", "wooper", "swinub", "hoppip", "slugma", "phanpy",
+     "lotad", "seedot", "taillow", "shroomish", "makuhita", "electrike", "gulpin", "numel",
+     "spoink", "shinx", "buizel", "shellos", "buneary", "stunky", "drilbur", "sandile", "dwebble",
+     "joltik", "woobat"],
+    // Tier 2: strong — evolved or tough pokemon
+    ["raticate", "golbat", "parasect", "geodude", "gastly", "machoke", "kadabra", "gloom",
+     "poliwhirl", "magneton", "graveler", "haunter", "seadra", "nidorina", "nidorino", "weepinbell",
+     "marowak", "weezing", "rhyhorn", "arbok", "flaaffy", "croagunk", "piloswine", "ursaring",
+     "houndour", "sneasel", "aron", "meditite", "trapinch", "sableye", "carvanha", "cacnea",
+     "barboach", "shuppet", "duskull", "bagon", "deino", "darumaka", "scraggy", "roggenrola",
+     "pawniard", "axew", "litwick", "ferroseed", "zorua", "gible"],
+    // Tier 3: elite — powerful, fully evolved
+    ["pinsir", "scyther", "mankey", "vulpix", "clefairy", "dratini", "arcanine", "primeape",
+     "ninetales", "golduck", "tentacruel", "rapidash", "hypno", "kingler", "electabuzz", "magmar",
+     "tauros", "heracross", "scizor", "houndoom", "donphan", "breloom", "hariyama", "aggron",
+     "manectric", "flygon", "absol", "zangoose", "seviper", "mawile", "altaria", "glalie",
+     "luxray", "staraptor", "floatzel", "lopunny", "weavile", "excadrill", "zoroark", "darmanitan",
+     "haxorus", "chandelure", "mienfoo"],
+    // Tier 4: boss-tier — pseudo-legendaries, tanks
+    ["snorlax", "onix", "lapras", "aerodactyl", "dragonite", "tyranitar", "salamence",
+     "metagross", "garchomp", "hydreigon", "volcarona", "gyarados", "nidoking", "nidoqueen",
+     "machamp", "alakazam", "gengar", "blastoise", "charizard", "venusaur", "rhydon",
+     "druddigon", "milotic", "togekiss", "gallade", "mamoswine", "steelix"],
   ];
+
+  /** Behavior lookup — grouped by fighting style */
+  private static readonly SWARM_POKEMON = new Set([
+    "rattata", "caterpie", "weedle", "paras", "oddish", "meowth", "sentret", "ledyba",
+    "spinarak", "wurmple", "zigzagoon", "poochyena", "starly", "bidoof", "lillipup",
+    "pidove", "sewaddle", "venipede", "cottonee", "lotad", "seedot", "hoppip", "sunkern",
+    "wooper", "gulpin", "spoink", "shellos", "dwebble", "roggenrola", "minccino",
+    "pichu", "togepi", "skitty", "budew", "pachirisu", "plusle", "minun",
+  ]);
+  private static readonly CIRCLE_POKEMON = new Set([
+    "zubat", "pidgey", "spearow", "magnemite", "koffing", "golbat", "crobat",
+    "taillow", "swellow", "wingull", "noctowl", "fearow", "pidgeotto", "pidgeot",
+    "staravia", "staraptor", "aerodactyl", "murkrow", "doduo", "dodrio",
+    "emolga", "drifloon", "swablu", "altaria", "butterfree", "venomoth",
+    "voltorb", "electrode", "lunatone", "solrock", "bronzor", "rotom", "ducklett",
+  ]);
+  private static readonly RANGED_POKEMON = new Set([
+    "gastly", "psyduck", "drowzee", "grimer", "slowpoke", "abra", "kadabra", "alakazam",
+    "exeggcute", "exeggutor", "starmie", "mrmime", "jynx", "haunter", "gengar",
+    "misdreavus", "natu", "xatu", "girafarig", "espeon", "hypno",
+    "ralts", "kirlia", "gardevoir", "sableye", "shuppet", "banette", "duskull", "dusclops",
+    "glameow", "finneon", "chandelure", "litwick", "lampent", "gothita", "solosis",
+    "magneton", "porygon", "staryu", "chinchou", "lanturn", "slugma", "magcargo",
+    "barboach", "feebas", "spheal", "clamperl", "shellder", "cloyster", "tentacool",
+  ]);
+  private static readonly CHARGE_POKEMON = new Set([
+    "geodude", "machop", "mankey", "pinsir", "charmander", "scyther", "onix", "snorlax",
+    "machoke", "machamp", "primeape", "rhyhorn", "rhydon", "tauros", "hitmonlee",
+    "hitmonchan", "hitmontop", "tyrogue", "kangaskhan", "heracross", "ursaring",
+    "donphan", "makuhita", "hariyama", "aggron", "lairon", "aron", "breloom",
+    "cranidos", "hippopotas", "garchomp", "gabite", "gible", "excadrill", "drilbur",
+    "darmanitan", "darumaka", "haxorus", "axew", "fraxure", "timburr", "mienfoo",
+    "druddigon", "mamoswine", "gallade", "lucario", "riolu", "croagunk",
+  ]);
+
+  private static getBehavior(key: string): EnemyBehavior {
+    if (GameScene.SWARM_POKEMON.has(key)) return "swarm";
+    if (GameScene.CIRCLE_POKEMON.has(key)) return "circle";
+    if (GameScene.RANGED_POKEMON.has(key)) return "ranged";
+    if (GameScene.CHARGE_POKEMON.has(key)) return "charge";
+    return "chase";
+  }
 
   private spawnEnemy(elapsed: number): void {
     if (this.enemies.length >= MAX_ENEMIES) return;
@@ -1318,7 +1435,7 @@ export class GameScene extends Phaser.Scene {
     const ey = this.ace.sprite.y + Math.sin(angle) * dist;
 
     // Scale with time + cycle number
-    const tier = elapsed < 60 ? 0 : elapsed < 150 ? 1 : 2;
+    const tier = elapsed < 45 ? 0 : elapsed < 90 ? 1 : elapsed < 150 ? 2 : elapsed < 220 ? 3 : 4;
     const cycleMult = 1 + (this.cycleNumber - 1) * 0.25;
     const hpMult = (1 + tier * 0.8 + elapsed * 0.01) * cycleMult;
     const spdMult = (1 + tier * 0.2) * Math.min(cycleMult, 1.5);
@@ -1351,18 +1468,8 @@ export class GameScene extends Phaser.Scene {
 
     const hpBarGfx = this.add.graphics().setDepth(6);
 
-    // Assign behavior based on pokemon
-    const behaviorMap: Record<string, EnemyBehavior> = {
-      rattata: "swarm", caterpie: "swarm", weedle: "swarm", paras: "swarm", oddish: "swarm", meowth: "swarm",
-      zubat: "circle", pidgey: "circle", spearow: "circle", magnemite: "circle", koffing: "circle",
-      gastly: "ranged", psyduck: "ranged", drowzee: "ranged", grimer: "ranged", slowpoke: "ranged",
-      geodude: "charge", machop: "charge", mankey: "charge", pinsir: "charge", charmander: "charge",
-      scyther: "charge", onix: "charge", snorlax: "charge",
-      bulbasaur: "chase", sandshrew: "chase", ekans: "chase", growlithe: "chase", cubone: "chase",
-      poliwag: "chase", vulpix: "chase", eevee: "chase", dratini: "chase", clefairy: "chase",
-      lapras: "chase", aerodactyl: "circle",
-    };
-    const behavior = behaviorMap[pokemonKey] ?? "chase";
+    // Assign behavior based on pokemon type/nature
+    const behavior = GameScene.getBehavior(pokemonKey);
 
     // Elite chance: scales with wave number and cycle
     const eliteChance = Math.min(0.5, 0.15 + this.waveNumber * 0.01 + (this.cycleNumber - 1) * 0.05);
@@ -2718,7 +2825,19 @@ export class GameScene extends Phaser.Scene {
 
     const bossHp = 200 + this.cycleNumber * 80;
     // Boss variety based on cycle
-    const bossPool = ["pinsir", "geodude", "gastly", "snorlax", "onix", "lapras", "aerodactyl", "scyther"];
+    const bossPool = [
+      // Gen 1
+      "snorlax", "lapras", "aerodactyl", "gyarados", "dragonite",
+      "articuno", "zapdos", "moltres", "mewtwo",
+      // Gen 2
+      "tyranitar", "raikou", "entei", "suicune", "lugia", "hooh",
+      // Gen 3
+      "salamence", "metagross", "groudon", "kyogre", "rayquaza",
+      // Gen 4
+      "garchomp", "togekiss", "mamoswine", "dialga", "palkia", "giratina", "darkrai",
+      // Gen 5
+      "hydreigon", "volcarona", "reshiram", "zekrom", "kyurem", "genesect",
+    ];
     const bossKey = bossPool[(this.cycleNumber - 1 + this.waveNumber) % bossPool.length];
     const pmdTexKey = pacTexKey(bossKey);
     const usePmd = this.textures.exists(pmdTexKey);

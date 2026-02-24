@@ -20,12 +20,25 @@ export interface StarterDef {
 }
 
 export const ALL_STARTERS: StarterDef[] = [
+  // Gen 1 — available from start
   { key: "pikachu",    name: "Pikachu",    color: "#fbbf24", hp: 100, atk: 10, speed: 160, range: 120, cooldown: 800, unlockCondition: null, unlockAchievement: null },
   { key: "charmander", name: "Charmander", color: "#f43f5e", hp: 80,  atk: 14, speed: 160, range: 130, cooldown: 700, unlockCondition: null, unlockAchievement: null },
   { key: "squirtle",   name: "Squirtle",   color: "#38bdf8", hp: 130, atk: 8,  speed: 150, range: 110, cooldown: 900, unlockCondition: null, unlockAchievement: null },
-  { key: "bulbasaur",  name: "Bulbasaur",  color: "#4ade80", hp: 110, atk: 9,  speed: 155, range: 115, cooldown: 850, unlockCondition: "Reach Wave 5",  unlockAchievement: "wave_5" },
-  { key: "gastly",     name: "Gastly",     color: "#a78bfa", hp: 70,  atk: 16, speed: 170, range: 140, cooldown: 600, unlockCondition: "Defeat 200 enemies",  unlockAchievement: "kill_200" },
-  { key: "geodude",    name: "Geodude",    color: "#a8a29e", hp: 160, atk: 7,  speed: 130, range: 100, cooldown: 1000, unlockCondition: "Reach Cycle 2",  unlockAchievement: "cycle_2" },
+  // Gen 1 — unlock
+  { key: "bulbasaur",  name: "Bulbasaur",  color: "#4ade80", hp: 110, atk: 9,  speed: 155, range: 115, cooldown: 850, unlockCondition: "Reach Wave 5", unlockAchievement: "wave_5" },
+  { key: "gastly",     name: "Gastly",     color: "#a78bfa", hp: 70,  atk: 16, speed: 170, range: 140, cooldown: 600, unlockCondition: "Defeat 200 enemies", unlockAchievement: "kill_200" },
+  { key: "geodude",    name: "Geodude",    color: "#a8a29e", hp: 160, atk: 7,  speed: 130, range: 100, cooldown: 1000, unlockCondition: "Reach Cycle 2", unlockAchievement: "cycle_2" },
+  { key: "eevee",      name: "Eevee",      color: "#d4a574", hp: 90,  atk: 11, speed: 165, range: 125, cooldown: 750, unlockCondition: "Defeat 500 enemies", unlockAchievement: "kill_500" },
+  // Gen 2
+  { key: "chikorita",  name: "Chikorita",  color: "#86efac", hp: 120, atk: 8,  speed: 150, range: 110, cooldown: 900, unlockCondition: "Reach Wave 8", unlockAchievement: "wave_8" },
+  { key: "cyndaquil",  name: "Cyndaquil",  color: "#fb923c", hp: 85,  atk: 13, speed: 165, range: 135, cooldown: 650, unlockCondition: "Reach Cycle 3", unlockAchievement: "cycle_3" },
+  { key: "totodile",   name: "Totodile",   color: "#22d3ee", hp: 105, atk: 12, speed: 155, range: 120, cooldown: 780, unlockCondition: "Survive 10 minutes", unlockAchievement: "time_600" },
+  // Gen 3
+  { key: "treecko",    name: "Treecko",    color: "#22c55e", hp: 85,  atk: 11, speed: 175, range: 130, cooldown: 700, unlockCondition: "Defeat 1000 enemies", unlockAchievement: "kill_1000" },
+  { key: "torchic",    name: "Torchic",    color: "#ef4444", hp: 75,  atk: 15, speed: 160, range: 125, cooldown: 650, unlockCondition: "Reach Cycle 4", unlockAchievement: "cycle_4" },
+  { key: "mudkip",     name: "Mudkip",     color: "#60a5fa", hp: 115, atk: 10, speed: 150, range: 115, cooldown: 850, unlockCondition: "Reach Wave 10", unlockAchievement: "wave_10" },
+  // Gen 4
+  { key: "riolu",      name: "Riolu",      color: "#6366f1", hp: 95,  atk: 13, speed: 170, range: 110, cooldown: 700, unlockCondition: "Reach Cycle 5", unlockAchievement: "cycle_5" },
 ];
 
 export interface SaveData {
