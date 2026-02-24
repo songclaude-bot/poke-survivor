@@ -435,14 +435,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createStarfield(): void {
-    this.stars = [];
-    for (let i = 0; i < 80; i++) {
-      this.stars.push({
-        x: Math.random() * GAME_WIDTH,
-        y: Math.random() * GAME_HEIGHT,
-        alpha: Math.random() * 0.6 + 0.1,
-        speed: Math.random() * 0.3 + 0.05,
-      });
+    // Dungeon floor tile background instead of starfield
+    if (this.textures.exists("dungeon-floor")) {
+      const tex = this.textures.get("dungeon-floor");
+      const tw = tex.getSourceImage().width;
+      const th = tex.getSourceImage().height;
+      // Tile enough to cover camera movement area
+      for (let ty = -th * 2; ty < GAME_HEIGHT + th * 4; ty += th) {
+        for (let tx = -tw * 2; tx < GAME_WIDTH + tw * 4; tx += tw) {
+          this.add.image(tx, ty, "dungeon-floor").setOrigin(0, 0).setDepth(-10);
+        }
+      }
     }
     this.starGfx = this.add.graphics().setDepth(-10);
   }
@@ -570,19 +573,11 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100)
       .setScrollFactor(0);
 
-    // Dodge button (right side)
+    // Dodge button placeholder (hidden — dodge removed, single-thumb controls)
     this.dodgeBtn = this.add
-      .text(GAME_WIDTH - 50, GAME_HEIGHT - 100, "DODGE", {
-        fontFamily: "monospace",
-        fontSize: "12px",
-        color: "#667eea",
-        backgroundColor: "#111118",
-        padding: { x: 8, y: 6 },
-      })
-      .setOrigin(0.5)
-      .setDepth(90)
-      .setScrollFactor(0)
-      .setAlpha(0.6);
+      .text(0, 0, "", { fontFamily: "monospace", fontSize: "1px" })
+      .setVisible(false)
+      .setScrollFactor(0);
 
     // Boss HP bar (hidden until boss spawns)
     this.bossHpBar = this.add.graphics().setDepth(100).setScrollFactor(0).setVisible(false);
@@ -777,15 +772,10 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
       if (this.isPaused) return;
-      // Left half: joystick
-      if (p.x < GAME_WIDTH * 0.6) {
-        this.joyPointer = p;
-        this.joyBase.setPosition(p.x, p.y).setAlpha(0.5);
-        this.joyThumb.setPosition(p.x, p.y);
-      } else {
-        // Right half: dodge roll
-        this.tryDodge();
-      }
+      // Entire screen: joystick (single thumb control)
+      this.joyPointer = p;
+      this.joyBase.setPosition(p.x, p.y).setAlpha(0.5);
+      this.joyThumb.setPosition(p.x, p.y);
     });
 
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -998,13 +988,7 @@ export class GameScene extends Phaser.Scene {
   // ================================================================
 
   private updateStarfield(_dt: number): void {
-    this.starGfx.clear();
-    for (const s of this.stars) {
-      s.alpha += Math.sin(Date.now() * s.speed * 0.01) * 0.01;
-      s.alpha = Phaser.Math.Clamp(s.alpha, 0.05, 0.7);
-      this.starGfx.fillStyle(0xffffff, s.alpha);
-      this.starGfx.fillRect(s.x, s.y, 1.5, 1.5);
-    }
+    // Dungeon floor tiles are static — no per-frame update needed
   }
 
   // ================================================================
@@ -1066,10 +1050,10 @@ export class GameScene extends Phaser.Scene {
     // Mini-boss every 3 waves starting from wave 3
     if (this.waveNumber >= 3 && this.waveNumber % 3 === 0) {
       this.spawnMiniBoss(elapsed);
+      // Show only mini-boss warning (skip wave alert to avoid overlap)
+    } else {
+      this.showWarning(`Wave ${this.waveNumber}`);
     }
-
-    // Announce wave
-    this.showWarning(`Wave ${this.waveNumber}`);
   }
 
   private spawnMiniBoss(elapsed: number): void {
@@ -2764,6 +2748,14 @@ export class GameScene extends Phaser.Scene {
   private showLevelUpSelection(): void {
     this.isPaused = true;
     this.pendingLevelUp = true;
+
+    // Stop all movement immediately
+    this.ace.sprite.setVelocity(0, 0);
+    this.joyVector.set(0, 0);
+    this.joyPointer = null;
+    this.joyThumb.setPosition(this.joyBase.x, this.joyBase.y);
+    this.joyBase.setAlpha(0.3);
+
     this.levelUpContainer.removeAll(true);
     this.levelUpContainer.setVisible(true);
 

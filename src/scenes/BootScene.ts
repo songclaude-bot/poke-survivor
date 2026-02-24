@@ -29,6 +29,9 @@ export class BootScene extends Phaser.Scene {
       console.warn(`[BootScene] Failed to load: ${file.key} — using placeholder`);
     });
 
+    // Load dungeon floor tile for game background
+    this.load.image("dungeon-floor", "assets/dungeon-floor.png");
+
     // Load PMD sprites from SpriteCollab (async, may fail on network issues)
     loadPmdSprites(this);
     loadPmdPortraits(this);

@@ -30,16 +30,18 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Starfield background
-    this.stars = [];
-    for (let i = 0; i < 60; i++) {
-      this.stars.push({
-        x: Math.random() * GAME_WIDTH,
-        y: Math.random() * GAME_HEIGHT,
-        alpha: Math.random() * 0.6 + 0.1,
-        speed: Math.random() * 0.4 + 0.1,
-      });
+    // Dungeon floor tile background
+    if (this.textures.exists("dungeon-floor")) {
+      const tex = this.textures.get("dungeon-floor");
+      const tw = tex.getSourceImage().width;
+      const th = tex.getSourceImage().height;
+      for (let ty = 0; ty < GAME_HEIGHT; ty += th) {
+        for (let tx = 0; tx < GAME_WIDTH; tx += tw) {
+          this.add.image(tx, ty, "dungeon-floor").setOrigin(0, 0).setDepth(0).setAlpha(0.6);
+        }
+      }
     }
+    this.stars = [];
     this.starGfx = this.add.graphics().setDepth(0);
 
     // Floating Pokemon sprites in background
@@ -254,18 +256,6 @@ export class TitleScene extends Phaser.Scene {
   }
 
   update(): void {
-    // Animate stars
-    this.starGfx.clear();
-    for (const star of this.stars) {
-      star.y += star.speed;
-      if (star.y > GAME_HEIGHT) {
-        star.y = 0;
-        star.x = Math.random() * GAME_WIDTH;
-      }
-      star.alpha += (Math.random() - 0.5) * 0.02;
-      star.alpha = Phaser.Math.Clamp(star.alpha, 0.05, 0.7);
-      this.starGfx.fillStyle(0xffffff, star.alpha);
-      this.starGfx.fillRect(star.x, star.y, 1.5, 1.5);
-    }
+    // Dungeon tile background is static — no animation needed
   }
 }
