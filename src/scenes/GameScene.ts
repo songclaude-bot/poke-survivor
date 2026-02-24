@@ -107,6 +107,7 @@ interface LegionEntity {
 interface CyclePassData {
   cycleNumber?: number;
   legions?: LegionData[];
+  starterKey?: string;
 }
 
 // -- Evolution data --
@@ -292,9 +293,12 @@ export class GameScene extends Phaser.Scene {
     super({ key: "GameScene" });
   }
 
+  private starterKey = "pikachu";
+
   init(data?: CyclePassData): void {
     if (data?.cycleNumber) this.cycleNumber = data.cycleNumber;
     if (data?.legions) this.legions = [...data.legions];
+    if (data?.starterKey) this.starterKey = data.starterKey;
   }
 
   create(): void {
@@ -361,9 +365,15 @@ export class GameScene extends Phaser.Scene {
     this.starGfx = this.add.graphics().setDepth(-10);
   }
 
+  /** Starter base stats per pokemon */
+  private static readonly STARTER_STATS: Record<string, { hp: number; atk: number; speed: number; range: number; cooldown: number }> = {
+    pikachu:    { hp: 100, atk: 10, speed: 160, range: 120, cooldown: 800 },
+    charmander: { hp: 80,  atk: 14, speed: 160, range: 130, cooldown: 700 },
+    squirtle:   { hp: 130, atk: 8,  speed: 150, range: 110, cooldown: 900 },
+  };
+
   private createAce(): void {
-    // Use PMD sprite if available, fallback to placeholder
-    const aceKey = "pikachu";
+    const aceKey = this.starterKey;
     const texKey = `pmd-${aceKey}`;
     const usePmd = this.textures.exists(texKey);
     const sprite = this.physics.add.sprite(
@@ -376,21 +386,20 @@ export class GameScene extends Phaser.Scene {
 
     if (usePmd) {
       sprite.play(`${aceKey}-walk-down`);
-      // Scale sprite for better visibility
       sprite.setScale(1.5);
     }
 
-    // Scale ace stats with cycle number
+    const base = GameScene.STARTER_STATS[aceKey] ?? GameScene.STARTER_STATS.pikachu;
     const cycleMult = 1 + (this.cycleNumber - 1) * 0.15;
     this.ace = {
       sprite,
       pokemonKey: aceKey,
-      hp: Math.floor(100 * cycleMult),
-      maxHp: Math.floor(100 * cycleMult),
-      atk: Math.floor(10 * cycleMult),
-      speed: 160 + (this.cycleNumber - 1) * 5,
-      attackRange: 120 + (this.cycleNumber - 1) * 5,
-      attackCooldown: Math.max(400, 800 - (this.cycleNumber - 1) * 30),
+      hp: Math.floor(base.hp * cycleMult),
+      maxHp: Math.floor(base.hp * cycleMult),
+      atk: Math.floor(base.atk * cycleMult),
+      speed: base.speed + (this.cycleNumber - 1) * 5,
+      attackRange: base.range + (this.cycleNumber - 1) * 5,
+      attackCooldown: Math.max(400, base.cooldown - (this.cycleNumber - 1) * 30),
       lastAttackTime: 0,
     };
   }
@@ -2370,7 +2379,7 @@ export class GameScene extends Phaser.Scene {
     this.ace.sprite.destroy();
 
     // Restart scene with persistent data
-    this.scene.restart({ cycleNumber: nextCycle, legions: savedLegions });
+    this.scene.restart({ cycleNumber: nextCycle, legions: savedLegions, starterKey: this.starterKey });
   }
 
   // ================================================================

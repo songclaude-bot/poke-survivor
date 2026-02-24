@@ -6,10 +6,24 @@ import { sfx } from "../audio/SfxManager";
 /**
  * TitleScene — Start screen with animated background and tap-to-start.
  */
+interface StarterInfo {
+  key: string;
+  name: string;
+  desc: string;
+  color: string;
+}
+
+const STARTERS: StarterInfo[] = [
+  { key: "pikachu", name: "Pikachu", desc: "Balanced\nATK ★★★ HP ★★★ SPD ★★★", color: "#fbbf24" },
+  { key: "charmander", name: "Charmander", desc: "Attacker\nATK ★★★★ HP ★★ SPD ★★★", color: "#f43f5e" },
+  { key: "squirtle", name: "Squirtle", desc: "Tank\nATK ★★ HP ★★★★ SPD ★★★", color: "#38bdf8" },
+];
+
 export class TitleScene extends Phaser.Scene {
   private stars: { x: number; y: number; alpha: number; speed: number }[] = [];
   private starGfx!: Phaser.GameObjects.Graphics;
   private floatingPokemon: Phaser.GameObjects.Sprite[] = [];
+  private selectedStarter = 0;
 
   constructor() {
     super({ key: "TitleScene" });
@@ -80,9 +94,74 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(10);
 
+    // Starter selection
+    this.add
+      .text(GAME_WIDTH / 2, 340, "Choose your starter:", {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#888",
+      })
+      .setOrigin(0.5)
+      .setDepth(10);
+
+    const starterCards: Phaser.GameObjects.Container[] = [];
+    STARTERS.forEach((starter, i) => {
+      const cx = 65 + i * 130;
+      const cy = 420;
+      const container = this.add.container(cx, cy).setDepth(10);
+
+      // Card background
+      const bg = this.add
+        .rectangle(0, 0, 115, 120, 0x111118, 0.9)
+        .setStrokeStyle(i === this.selectedStarter ? 2 : 1, i === this.selectedStarter ? 0xfbbf24 : 0x333344);
+      container.add(bg);
+
+      // Portrait
+      const porKey = `portrait-${starter.key}`;
+      if (this.textures.exists(porKey)) {
+        const portrait = this.add.image(0, -25, porKey).setDisplaySize(40, 40);
+        container.add(portrait);
+      }
+
+      // Name
+      const nameText = this.add
+        .text(0, 10, starter.name, {
+          fontFamily: "monospace",
+          fontSize: "11px",
+          color: starter.color,
+        })
+        .setOrigin(0.5);
+      container.add(nameText);
+
+      // Description
+      const descText = this.add
+        .text(0, 35, starter.desc, {
+          fontFamily: "monospace",
+          fontSize: "8px",
+          color: "#777",
+          align: "center",
+          lineSpacing: 2,
+        })
+        .setOrigin(0.5);
+      container.add(descText);
+
+      // Make interactive
+      bg.setInteractive({ useHandCursor: true });
+      bg.on("pointerdown", () => {
+        this.selectedStarter = i;
+        // Update card borders
+        starterCards.forEach((card, j) => {
+          const cardBg = card.getAt(0) as Phaser.GameObjects.Rectangle;
+          cardBg.setStrokeStyle(j === i ? 2 : 1, j === i ? 0xfbbf24 : 0x333344);
+        });
+      });
+
+      starterCards.push(container);
+    });
+
     // Tap to start (blinking)
     const startText = this.add
-      .text(GAME_WIDTH / 2, 500, "[ Tap to Start ]", {
+      .text(GAME_WIDTH / 2, 510, "[ Tap to Start ]", {
         fontFamily: "monospace",
         fontSize: "16px",
         color: "#fff",
@@ -169,14 +248,15 @@ export class TitleScene extends Phaser.Scene {
     // Fade in
     this.cameras.main.fadeIn(600, 0, 0, 0);
 
-    // Input: tap anywhere to start
-    this.input.once("pointerdown", () => {
-      // Initialize audio on first user gesture
+    // Start button area
+    startText.setInteractive({ useHandCursor: true });
+    startText.on("pointerdown", () => {
       sfx.init();
       sfx.playStart();
+      const starter = STARTERS[this.selectedStarter];
       this.cameras.main.fadeOut(300, 0, 0, 0);
       this.cameras.main.once("camerafadeoutcomplete", () => {
-        this.scene.start("GameScene");
+        this.scene.start("GameScene", { starterKey: starter.key });
       });
     });
   }
