@@ -1,5 +1,29 @@
 # Poke Survivor - Development Log
 
+## 2026-02-24 (Session 6) — Massive Pokemon Expansion (200+ Species)
+
+### Changes
+- **200+ pokemon registered**: Complete Gen 1 national dex (151), plus 60+ from Gen 2, 60+ from Gen 3, 40+ from Gen 4, 40+ from Gen 5
+- **14 selectable starters**: Pikachu, Charmander, Squirtle, Bulbasaur, Gastly, Geodude, Eevee, Chikorita, Cyndaquil, Totodile, Treecko, Torchic, Mudkip, Riolu
+- **Full 3-stage evolution chains**: All starters now evolve to final form (Charizard, Blastoise, Venusaur, Gengar, Golem, Typhlosion, Blaziken, etc.)
+- **5-tier enemy system**: Tier 0 (bugs/rodents) → Tier 1 (mid) → Tier 2 (evolved) → Tier 3 (elite) → Tier 4 (pseudo-legends/tanks)
+- **33 legendary bosses**: Articuno, Zapdos, Moltres, Mewtwo, Raikou, Entei, Suicune, Lugia, Ho-Oh, Groudon, Kyogre, Rayquaza, Dialga, Palkia, Giratina, Reshiram, Zekrom, and more
+- **8 new unlock achievements**: wave_8, wave_10, cycle_3/4/5, time_600, kill_500/1000
+- **Behavior system refactored**: Static Sets for O(1) lookup, 4 categories: swarm/circle/ranged/charge (default: chase)
+- **Attack types for all starters**: GHOST, ROCK, NORMAL, FIGHTING, etc.
+
+### Technical Notes
+- Adding a pokemon is now just `key: { id: "XXXX", name: "Name" }` — one line
+- PAC atlas format means zero per-pokemon debugging for frame sizes
+- Tier progression: T0 (0-45s) → T1 (45-90s) → T2 (90-150s) → T3 (150-220s) → T4 (220s+)
+- Behavior lookup using `Set.has()` instead of object map — faster for 200+ pokemon
+
+### Stats
+- 4 files changed, 631 insertions, 141 deletions
+- Commit: `a8050eb`
+
+---
+
 ## 2026-02-24 (Session 5) — Pokemon Auto Chess Atlas Migration
 
 ### Changes
