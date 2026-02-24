@@ -1215,13 +1215,28 @@ export class GameScene extends Phaser.Scene {
     if (!target) return;
 
     this.ace.lastAttackTime = now;
-    this.fireProjectile(
-      this.ace.sprite.x,
-      this.ace.sprite.y,
-      target.sprite.x,
-      target.sprite.y,
-      this.ace.atk,
+    sfx.playHit();
+
+    // Multi-shot based on level: 1 at base, 3 at Lv7, 5 at Lv15
+    const shotCount = this.level >= 15 ? 5 : this.level >= 7 ? 3 : 1;
+    const baseAngle = Math.atan2(
+      target.sprite.y - this.ace.sprite.y,
+      target.sprite.x - this.ace.sprite.x,
     );
+    const spread = 0.2; // ~11 degrees spread per shot
+
+    for (let s = 0; s < shotCount; s++) {
+      const offset = (s - (shotCount - 1) / 2) * spread;
+      const angle = baseAngle + offset;
+      const dist = 200;
+      this.fireProjectile(
+        this.ace.sprite.x,
+        this.ace.sprite.y,
+        this.ace.sprite.x + Math.cos(angle) * dist,
+        this.ace.sprite.y + Math.sin(angle) * dist,
+        Math.floor(this.ace.atk / (shotCount > 1 ? shotCount * 0.6 : 1)),
+      );
+    }
   }
 
   private findNearestEnemy(
@@ -1267,7 +1282,8 @@ export class GameScene extends Phaser.Scene {
     const speed = 300;
     sprite.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
 
-    this.projectiles.push({ sprite, damage, pierce: 1 });
+    const pierce = 1 + this.aceEvoStage; // More pierce with evolution
+    this.projectiles.push({ sprite, damage, pierce });
   }
 
   private updateProjectiles(_dt: number): void {
