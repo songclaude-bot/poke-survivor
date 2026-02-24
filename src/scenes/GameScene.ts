@@ -910,11 +910,25 @@ export class GameScene extends Phaser.Scene {
 
   private showWaveClearText(): void {
     // Auto-evolve companions every 5 waves
+    // Auto-evolve companions every 5 waves
     if (this.waveNumber > 0 && this.waveNumber % 5 === 0) {
       for (const c of this.companions) {
         this.evolveCompanion(c);
       }
     }
+
+    // Vacuum all XP gems on wave clear
+    for (const gem of this.xpGems) {
+      if (!gem.sprite.active) continue;
+      const angle = Math.atan2(
+        this.ace.sprite.y - gem.sprite.y,
+        this.ace.sprite.x - gem.sprite.x,
+      );
+      gem.sprite.setVelocity(Math.cos(angle) * 500, Math.sin(angle) * 500);
+    }
+
+    // Small heal on wave clear (10% of max HP)
+    this.ace.hp = Math.min(this.ace.hp + Math.floor(this.ace.maxHp * 0.1), this.ace.maxHp);
 
     const txt = this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "WAVE CLEAR!", {
@@ -2449,19 +2463,24 @@ export class GameScene extends Phaser.Scene {
       },
     });
 
-    // Choice D: Speed + Range (only if we have 3 options already)
-    if (choices.length < 3) {
-      choices.push({
-        label: "SPEED +20%",
-        desc: `Move faster, attack faster`,
-        color: 0xfbbf24,
-        portrait: this.ace.pokemonKey,
-        action: () => {
-          this.ace.speed = Math.floor(this.ace.speed * 1.2);
-          this.ace.attackCooldown = Math.max(200, this.ace.attackCooldown - 80);
-        },
-      });
+    // Choice D: Speed + Range
+    choices.push({
+      label: "SPEED +20%",
+      desc: `Move faster, attack faster`,
+      color: 0xfbbf24,
+      portrait: this.ace.pokemonKey,
+      action: () => {
+        this.ace.speed = Math.floor(this.ace.speed * 1.2);
+        this.ace.attackCooldown = Math.max(200, this.ace.attackCooldown - 80);
+      },
+    });
+
+    // Shuffle and take max 3 choices
+    for (let i = choices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [choices[i], choices[j]] = [choices[j], choices[i]];
     }
+    choices.length = Math.min(choices.length, 3);
 
     // Render choice cards
     const startY = 140;
