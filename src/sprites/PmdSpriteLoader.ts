@@ -1,383 +1,310 @@
 import Phaser from "phaser";
 
 /**
- * PMD Sprite Loader — Loads walk sprites from PMDCollab SpriteCollab repository.
+ * Pokemon Sprite Loader — Loads atlas sprites from Pokemon Auto Chess repository.
  *
- * Sprite format: Walk-Anim.png contains frames arranged horizontally,
- * with 8 directional rows (Down, DownRight, Right, UpRight, Up, UpLeft, Left, DownLeft).
- *
- * AnimData.xml provides frame dimensions and timing.
+ * Source: github.com/keldaanCommunity/pokemonAutoChess (GPL-3.0)
+ * Atlas format: TexturePacker multiatlas (JSON + PNG)
+ * Frame naming: "{Normal|Shiny}/{Action}/Anim/{Direction 0-7}/{FrameIndex}"
+ * Directions: 0=Down, 1=DownRight, 2=Right, 3=UpRight, 4=Up, 5=UpLeft, 6=Left, 7=DownLeft
  */
 
-const SPRITE_BASE =
-  "https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/sprite";
-const PORTRAIT_BASE =
-  "https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/portrait";
+const PAC_SPRITE_BASE =
+  "https://raw.githubusercontent.com/keldaanCommunity/pokemonAutoChess/master/app/public/src/assets/pokemons";
+const PAC_PORTRAIT_BASE =
+  "https://raw.githubusercontent.com/keldaanCommunity/pokemonAutoChess/master/app/public/src/assets/portraits";
 
-/** Direction row mapping in PMD sprites (top to bottom) */
+/** Direction row mapping — matches PAC atlas direction numbering */
 export const PMD_DIRECTIONS = [
-  "down",
-  "down-right",
-  "right",
-  "up-right",
-  "up",
-  "up-left",
-  "left",
-  "down-left",
+  "down",       // 0
+  "down-right", // 1
+  "right",      // 2
+  "up-right",   // 3
+  "up",         // 4
+  "up-left",    // 5
+  "left",       // 6
+  "down-left",  // 7
 ] as const;
 
 export type PmdDirection = (typeof PMD_DIRECTIONS)[number];
 
-/** Attack animation metadata from AnimData.xml */
-export interface PmdAttackConfig {
-  frameWidth: number;
-  frameHeight: number;
-  frameCount: number;
-  /** Frame durations in ticks */
-  durations: number[];
-  /** Frame index when character lunges forward */
-  rushFrame: number;
-  /** Frame index when damage is dealt */
-  hitFrame: number;
-  /** Frame index when character returns to idle */
-  returnFrame: number;
-}
-
-/** Pokemon ID → sprite data mapping for pre-configured sprites */
+/** Pokemon ID → sprite config mapping */
 export interface PmdSpriteConfig {
-  /** PMD ID (4-digit padded: "0025" for Pikachu) */
+  /** National Dex ID (4-digit padded: "0025" for Pikachu) */
   id: string;
   /** Display name */
   name: string;
-  /** Walk frame count (from AnimData.xml) */
-  walkFrames: number;
-  /** Walk frame width (px) */
-  frameWidth: number;
-  /** Walk frame height (px) */
-  frameHeight: number;
-  /** Frame durations in ticks */
-  durations: number[];
-  /** Attack animation config (from AnimData.xml Attack entry) */
-  attack?: PmdAttackConfig;
+  /** Whether this pokemon has attack animation in the atlas */
+  hasAttack?: boolean;
 }
 
 /**
- * Pre-configured sprites for the prototype.
- * Frame data extracted from AnimData.xml files.
+ * All pokemon used in the game.
+ * No more frameWidth/frameHeight needed — the atlas handles it!
  */
 export const POKEMON_SPRITES: Record<string, PmdSpriteConfig> = {
-  pikachu: {
-    id: "0025",
-    name: "Pikachu",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 40,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 80, frameHeight: 80, frameCount: 10,
-      durations: [2, 2, 2, 2, 2, 2, 2, 4, 2, 3],
-      rushFrame: 1, hitFrame: 3, returnFrame: 6,
-    },
-  },
-  charmander: {
-    id: "0004",
-    name: "Charmander",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 32,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 64, frameHeight: 64, frameCount: 11,
-      durations: [2, 2, 2, 2, 2, 2, 2, 2, 4, 2, 2],
-      rushFrame: 2, hitFrame: 6, returnFrame: 8,
-    },
-  },
-  squirtle: {
-    id: "0007",
-    name: "Squirtle",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 32,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 64, frameHeight: 72, frameCount: 10,
-      durations: [2, 2, 2, 2, 2, 2, 2, 4, 1, 2],
-      rushFrame: 1, hitFrame: 3, returnFrame: 6,
-    },
-  },
-  bulbasaur: {
-    id: "0001",
-    name: "Bulbasaur",
-    walkFrames: 6,
-    frameWidth: 40,
-    frameHeight: 40,
-    durations: [8, 6, 8, 6, 8, 6],
-    attack: {
-      frameWidth: 64, frameHeight: 72, frameCount: 11,
-      durations: [2, 2, 4, 2, 2, 2, 2, 2, 4, 2, 4],
-      rushFrame: 2, hitFrame: 5, returnFrame: 7,
-    },
-  },
-  gastly: {
-    id: "0092",
-    name: "Gastly",
-    walkFrames: 4,
-    frameWidth: 48,
-    frameHeight: 64,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 64, frameHeight: 80, frameCount: 13,
-      durations: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 2, 1],
-      rushFrame: 2, hitFrame: 6, returnFrame: 9,
-    },
-  },
-  geodude: {
-    id: "0074",
-    name: "Geodude",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 32,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 72, frameHeight: 80, frameCount: 14,
-      durations: [2, 2, 2, 2, 2, 1, 1, 2, 2, 1, 2, 2, 2, 2],
-      rushFrame: 2, hitFrame: 5, returnFrame: 8,
-    },
-  },
-  rattata: {
-    id: "0019",
-    name: "Rattata",
-    walkFrames: 4,
-    frameWidth: 48,
-    frameHeight: 40,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 64, frameHeight: 72, frameCount: 10,
-      durations: [2, 2, 2, 2, 2, 2, 2, 4, 1, 2],
-      rushFrame: 1, hitFrame: 3, returnFrame: 6,
-    },
-  },
-  zubat: {
-    id: "0041",
-    name: "Zubat",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 56,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 72, frameHeight: 80, frameCount: 11,
-      durations: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
-      rushFrame: 2, hitFrame: 4, returnFrame: 7,
-    },
-  },
-  pinsir: {
-    id: "0127",
-    name: "Pinsir",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 48,
-    durations: [8, 10, 8, 10],
-    attack: {
-      frameWidth: 64, frameHeight: 80, frameCount: 10,
-      durations: [2, 2, 2, 2, 2, 2, 2, 4, 1, 2],
-      rushFrame: 1, hitFrame: 3, returnFrame: 6,
-    },
-  },
-  // -- Extended enemy pool (walk only) --
-  caterpie:   { id: "0010", name: "Caterpie",   walkFrames: 4, frameWidth: 24, frameHeight: 32, durations: [8, 10, 8, 10] },
-  weedle:     { id: "0013", name: "Weedle",     walkFrames: 4, frameWidth: 24, frameHeight: 40, durations: [8, 10, 8, 10] },
-  pidgey:     { id: "0016", name: "Pidgey",     walkFrames: 4, frameWidth: 40, frameHeight: 32, durations: [8, 10, 8, 10] },
-  spearow:    { id: "0021", name: "Spearow",    walkFrames: 4, frameWidth: 40, frameHeight: 40, durations: [8, 10, 8, 10] },
-  ekans:      { id: "0023", name: "Ekans",      walkFrames: 4, frameWidth: 60, frameHeight: 48, durations: [8, 10, 8, 10] },
-  sandshrew:  { id: "0027", name: "Sandshrew",  walkFrames: 4, frameWidth: 32, frameHeight: 32, durations: [8, 10, 8, 10] },
-  clefairy:   { id: "0035", name: "Clefairy",   walkFrames: 4, frameWidth: 48, frameHeight: 40, durations: [8, 10, 8, 10] },
-  vulpix:     { id: "0037", name: "Vulpix",     walkFrames: 4, frameWidth: 40, frameHeight: 40, durations: [8, 10, 8, 10] },
-  oddish:     { id: "0043", name: "Oddish",     walkFrames: 4, frameWidth: 48, frameHeight: 40, durations: [8, 10, 8, 10] },
-  paras:      { id: "0046", name: "Paras",      walkFrames: 4, frameWidth: 32, frameHeight: 24, durations: [8, 10, 8, 10] },
-  meowth:     { id: "0052", name: "Meowth",     walkFrames: 4, frameWidth: 24, frameHeight: 32, durations: [8, 10, 8, 10] },
-  psyduck:    { id: "0054", name: "Psyduck",    walkFrames: 4, frameWidth: 24, frameHeight: 40, durations: [8, 10, 8, 10] },
-  mankey:     { id: "0056", name: "Mankey",     walkFrames: 4, frameWidth: 64, frameHeight: 56, durations: [8, 10, 8, 10] },
-  growlithe:  { id: "0058", name: "Growlithe",  walkFrames: 4, frameWidth: 32, frameHeight: 40, durations: [8, 10, 8, 10] },
-  poliwag:    { id: "0060", name: "Poliwag",    walkFrames: 4, frameWidth: 40, frameHeight: 40, durations: [8, 10, 8, 10] },
-  machop:     { id: "0066", name: "Machop",     walkFrames: 4, frameWidth: 24, frameHeight: 32, durations: [8, 10, 8, 10] },
-  slowpoke:   { id: "0079", name: "Slowpoke",   walkFrames: 4, frameWidth: 24, frameHeight: 32, durations: [8, 10, 8, 10] },
-  magnemite:  { id: "0081", name: "Magnemite",  walkFrames: 4, frameWidth: 36, frameHeight: 32, durations: [8, 10, 8, 10] },
-  grimer:     { id: "0088", name: "Grimer",     walkFrames: 4, frameWidth: 48, frameHeight: 32, durations: [8, 10, 8, 10] },
-  drowzee:    { id: "0096", name: "Drowzee",    walkFrames: 4, frameWidth: 32, frameHeight: 40, durations: [8, 10, 8, 10] },
-  cubone:     { id: "0104", name: "Cubone",     walkFrames: 4, frameWidth: 32, frameHeight: 32, durations: [8, 10, 8, 10] },
-  koffing:    { id: "0109", name: "Koffing",    walkFrames: 4, frameWidth: 80, frameHeight: 56, durations: [8, 10, 8, 10] },
-  scyther:    { id: "0123", name: "Scyther",    walkFrames: 4, frameWidth: 40, frameHeight: 48, durations: [8, 10, 8, 10] },
-  eevee:      { id: "0133", name: "Eevee",      walkFrames: 4, frameWidth: 70, frameHeight: 48, durations: [8, 10, 8, 10] },
-  dratini:    { id: "0147", name: "Dratini",    walkFrames: 4, frameWidth: 40, frameHeight: 40, durations: [8, 10, 8, 10] },
-  snorlax:    { id: "0143", name: "Snorlax",    walkFrames: 4, frameWidth: 32, frameHeight: 48, durations: [8, 10, 8, 10] },
-  onix:       { id: "0095", name: "Onix",       walkFrames: 4, frameWidth: 88, frameHeight: 112, durations: [8, 10, 8, 10] },
-  lapras:     { id: "0131", name: "Lapras",     walkFrames: 4, frameWidth: 48, frameHeight: 56, durations: [8, 10, 8, 10] },
-  aerodactyl: { id: "0142", name: "Aerodactyl", walkFrames: 4, frameWidth: 40, frameHeight: 64, durations: [8, 10, 8, 10] },
-  // -- Evolution sprites (walk only, no attack sheets) --
-  raichu: {
-    id: "0026",
-    name: "Raichu",
-    walkFrames: 4,
-    frameWidth: 40,
-    frameHeight: 48,
-    durations: [8, 10, 8, 10],
-  },
-  charmeleon: {
-    id: "0005",
-    name: "Charmeleon",
-    walkFrames: 4,
-    frameWidth: 24,
-    frameHeight: 32,
-    durations: [8, 10, 8, 10],
-  },
-  wartortle: {
-    id: "0008",
-    name: "Wartortle",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 40,
-    durations: [8, 10, 8, 10],
-  },
-  ivysaur: {
-    id: "0002",
-    name: "Ivysaur",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 32,
-    durations: [8, 10, 8, 10],
-  },
-  haunter: {
-    id: "0093",
-    name: "Haunter",
-    walkFrames: 4,
-    frameWidth: 80,
-    frameHeight: 56,
-    durations: [8, 10, 8, 10],
-  },
-  graveler: {
-    id: "0075",
-    name: "Graveler",
-    walkFrames: 4,
-    frameWidth: 32,
-    frameHeight: 48,
-    durations: [8, 10, 8, 10],
-  },
+  // -- Starters (with attack animations) --
+  pikachu:    { id: "0025", name: "Pikachu",    hasAttack: true },
+  charmander: { id: "0004", name: "Charmander", hasAttack: true },
+  squirtle:   { id: "0007", name: "Squirtle",   hasAttack: true },
+  bulbasaur:  { id: "0001", name: "Bulbasaur",  hasAttack: true },
+  gastly:     { id: "0092", name: "Gastly",      hasAttack: true },
+  geodude:    { id: "0074", name: "Geodude",     hasAttack: true },
+
+  // -- Evolution sprites --
+  raichu:     { id: "0026", name: "Raichu",     hasAttack: true },
+  charmeleon: { id: "0005", name: "Charmeleon", hasAttack: true },
+  wartortle:  { id: "0008", name: "Wartortle",  hasAttack: true },
+  ivysaur:    { id: "0002", name: "Ivysaur",    hasAttack: true },
+  haunter:    { id: "0093", name: "Haunter",    hasAttack: true },
+  graveler:   { id: "0075", name: "Graveler",   hasAttack: true },
+
+  // -- Enemy pool (Tier 0 — common) --
+  rattata:    { id: "0019", name: "Rattata" },
+  zubat:      { id: "0041", name: "Zubat" },
+  caterpie:   { id: "0010", name: "Caterpie" },
+  weedle:     { id: "0013", name: "Weedle" },
+  pidgey:     { id: "0016", name: "Pidgey" },
+  paras:      { id: "0046", name: "Paras" },
+  oddish:     { id: "0043", name: "Oddish" },
+  poliwag:    { id: "0060", name: "Poliwag" },
+  meowth:     { id: "0052", name: "Meowth" },
+
+  // -- Enemy pool (Tier 1 — uncommon) --
+  sandshrew:  { id: "0027", name: "Sandshrew" },
+  ekans:      { id: "0023", name: "Ekans" },
+  psyduck:    { id: "0054", name: "Psyduck" },
+  growlithe:  { id: "0058", name: "Growlithe" },
+  cubone:     { id: "0104", name: "Cubone" },
+  drowzee:    { id: "0096", name: "Drowzee" },
+  machop:     { id: "0066", name: "Machop" },
+  slowpoke:   { id: "0079", name: "Slowpoke" },
+  magnemite:  { id: "0081", name: "Magnemite" },
+  koffing:    { id: "0109", name: "Koffing" },
+  grimer:     { id: "0088", name: "Grimer" },
+
+  // -- Enemy pool (Tier 2 — rare) --
+  pinsir:     { id: "0127", name: "Pinsir" },
+  scyther:    { id: "0123", name: "Scyther" },
+  mankey:     { id: "0056", name: "Mankey" },
+  eevee:      { id: "0133", name: "Eevee" },
+  dratini:    { id: "0147", name: "Dratini" },
+  vulpix:     { id: "0037", name: "Vulpix" },
+  clefairy:   { id: "0035", name: "Clefairy" },
+
+  // -- Enemy pool (Tier 3 — boss-tier) --
+  snorlax:    { id: "0143", name: "Snorlax" },
+  onix:       { id: "0095", name: "Onix" },
+  lapras:     { id: "0131", name: "Lapras" },
+  aerodactyl: { id: "0142", name: "Aerodactyl" },
+
+  // -- Boss pool --
+  spearow:    { id: "0021", name: "Spearow" },
+
+  // -- Additional diversity (Gen 1+) --
+  abra:       { id: "0063", name: "Abra" },
+  bellsprout: { id: "0069", name: "Bellsprout" },
+  tentacool:  { id: "0072", name: "Tentacool" },
+  ponyta:     { id: "0077", name: "Ponyta" },
+  doduo:      { id: "0084", name: "Doduo" },
+  seel:       { id: "0086", name: "Seel" },
+  shellder:   { id: "0090", name: "Shellder" },
+  voltorb:    { id: "0100", name: "Voltorb" },
+  exeggcute:  { id: "0102", name: "Exeggcute" },
+  rhyhorn:    { id: "0111", name: "Rhyhorn" },
+  horsea:     { id: "0116", name: "Horsea" },
+  goldeen:    { id: "0118", name: "Goldeen" },
+  staryu:     { id: "0120", name: "Staryu" },
+  magikarp:   { id: "0129", name: "Magikarp" },
+  chikorita:  { id: "0152", name: "Chikorita" },
+  cyndaquil:  { id: "0155", name: "Cyndaquil" },
+  totodile:   { id: "0158", name: "Totodile" },
+  sentret:    { id: "0161", name: "Sentret" },
+  hoothoot:   { id: "0163", name: "Hoothoot" },
+  ledyba:     { id: "0165", name: "Ledyba" },
+  spinarak:   { id: "0167", name: "Spinarak" },
+  pichu:      { id: "0172", name: "Pichu" },
+  togepi:     { id: "0175", name: "Togepi" },
+  mareep:     { id: "0179", name: "Mareep" },
+  marill:     { id: "0183", name: "Marill" },
+  hoppip:     { id: "0187", name: "Hoppip" },
+  sunkern:    { id: "0191", name: "Sunkern" },
+  wooper:     { id: "0194", name: "Wooper" },
+  murkrow:    { id: "0198", name: "Murkrow" },
+  misdreavus: { id: "0200", name: "Misdreavus" },
+  snubbull:   { id: "0209", name: "Snubbull" },
+  teddiursa:  { id: "0216", name: "Teddiursa" },
+  slugma:     { id: "0218", name: "Slugma" },
+  swinub:     { id: "0220", name: "Swinub" },
+  phanpy:     { id: "0231", name: "Phanpy" },
+  larvitar:   { id: "0246", name: "Larvitar" },
+  treecko:    { id: "0252", name: "Treecko" },
+  torchic:    { id: "0255", name: "Torchic" },
+  mudkip:     { id: "0258", name: "Mudkip" },
+  ralts:      { id: "0280", name: "Ralts" },
+  shroomish:  { id: "0285", name: "Shroomish" },
+  aron:       { id: "0304", name: "Aron" },
+  electrike:  { id: "0309", name: "Electrike" },
+  trapinch:   { id: "0328", name: "Trapinch" },
+  swablu:     { id: "0333", name: "Swablu" },
+  feebas:     { id: "0349", name: "Feebas" },
+  shuppet:    { id: "0353", name: "Shuppet" },
+  snorunt:    { id: "0361", name: "Snorunt" },
+  bagon:      { id: "0371", name: "Bagon" },
+  beldum:     { id: "0374", name: "Beldum" },
 };
 
 /**
- * Load PMD Walk sprite sheets into Phaser's texture manager.
+ * Get the atlas texture key for a pokemon.
+ * Format: "pac-{key}" (e.g., "pac-pikachu")
+ */
+export function pacTexKey(key: string): string {
+  return `pac-${key}`;
+}
+
+/**
+ * Load Pokemon sprites as multiatlas from PAC repository.
  * Call this in preload() of BootScene.
  */
 export function loadPmdSprites(scene: Phaser.Scene): void {
   for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
-    const url = `${SPRITE_BASE}/${config.id}/Walk-Anim.png`;
-    const texKey = `pmd-${key}`;
-
-    // Load as spritesheet with correct frame dimensions
-    // PMD Walk sheets: columns = frames, rows = 8 directions
-    scene.load.spritesheet(texKey, url, {
-      frameWidth: config.frameWidth,
-      frameHeight: config.frameHeight,
-    });
+    const atlasKey = pacTexKey(key);
+    const jsonUrl = `${PAC_SPRITE_BASE}/${config.id}.json`;
+    scene.load.multiatlas(atlasKey, jsonUrl, `${PAC_SPRITE_BASE}/`);
   }
 }
 
 /**
- * Load PMD Attack sprite sheets from local assets.
- * Attack-Anim.png: same format as Walk-Anim (8 direction rows x N frames columns).
- * Call this in preload() of BootScene.
- */
-export function loadPmdAttackSprites(scene: Phaser.Scene): void {
-  for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
-    if (!config.attack) continue;
-    const texKey = `pmd-${key}-attack`;
-    // Load from local assets (downloaded from PMDCollab)
-    scene.load.spritesheet(texKey, `assets/sprites/${config.id}/Attack-Anim.png`, {
-      frameWidth: config.attack.frameWidth,
-      frameHeight: config.attack.frameHeight,
-    });
-  }
-}
-
-/**
- * Load PMD portraits (40x40 emotion images) for UI use.
+ * Load PMD portraits for UI use.
  */
 export function loadPmdPortraits(scene: Phaser.Scene): void {
   for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
-    const url = `${PORTRAIT_BASE}/${config.id}/Normal.png`;
+    const url = `${PAC_PORTRAIT_BASE}/${config.id}/Normal.png`;
     scene.load.image(`portrait-${key}`, url);
   }
 }
 
 /**
- * Create walk animations for all loaded PMD sprites.
+ * No-op for backward compatibility — attack sprites are now in the same atlas.
+ */
+export function loadPmdAttackSprites(_scene: Phaser.Scene): void {
+  // Attack animations are included in the multiatlas, no separate loading needed
+}
+
+/**
+ * Create walk + idle + attack animations from loaded PAC atlases.
+ * Scans atlas frame names to auto-discover animations and frame counts.
  * Call this in create() after sprites are loaded.
  */
 export function createPmdAnimations(scene: Phaser.Scene): void {
-  for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
-    const texKey = `pmd-${key}`;
-    if (!scene.textures.exists(texKey)) continue;
+  for (const [key] of Object.entries(POKEMON_SPRITES)) {
+    const atlasKey = pacTexKey(key);
+    if (!scene.textures.exists(atlasKey)) continue;
 
-    // Create animation for each direction
-    for (let dir = 0; dir < 8; dir++) {
-      const dirName = PMD_DIRECTIONS[dir];
-      const animKey = `${key}-walk-${dirName}`;
+    const frameNames = scene.textures.get(atlasKey).getFrameNames();
 
-      // Frame indices: row * framesPerRow + col
-      const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-      for (let f = 0; f < config.walkFrames; f++) {
-        frames.push({ key: texKey, frame: dir * config.walkFrames + f });
+    // Discover available animations by scanning frame names
+    // Format: "Normal/{Action}/Anim/{Dir}/{FrameIdx}"
+    const animFrameCounts = new Map<string, number>(); // "Walk/0" -> max frame index + 1
+
+    for (const name of frameNames) {
+      const match = name.match(/^Normal\/(\w+)\/Anim\/(\d)\/(\d{4})$/);
+      if (match) {
+        const [, action, dir, frameIdxStr] = match;
+        const mapKey = `${action}/${dir}`;
+        const idx = parseInt(frameIdxStr, 10);
+        const cur = animFrameCounts.get(mapKey) ?? 0;
+        if (idx + 1 > cur) animFrameCounts.set(mapKey, idx + 1);
       }
+    }
 
-      // Calculate frame rate from durations (ticks → ms)
-      // PMD tick = ~1/60th second, we average the durations
-      const avgDuration = config.durations.reduce((a, b) => a + b, 0) / config.durations.length;
-      const frameRate = 60 / avgDuration; // Convert ticks to fps
+    // Create walk animations for each direction
+    for (let dir = 0; dir < 8; dir++) {
+      const walkKey = `Walk/${dir}`;
+      const frameCount = animFrameCounts.get(walkKey);
+      if (!frameCount) continue;
 
       scene.anims.create({
-        key: animKey,
-        frames,
-        frameRate,
+        key: `${key}-walk-${PMD_DIRECTIONS[dir]}`,
+        frames: scene.anims.generateFrameNames(atlasKey, {
+          start: 0,
+          end: frameCount - 1,
+          zeroPad: 4,
+          prefix: `Normal/Walk/Anim/${dir}/`,
+        }),
+        frameRate: 8,
         repeat: -1,
       });
     }
 
-    // Also create a simple "idle" that's just the first frame of down-walk
-    scene.anims.create({
-      key: `${key}-idle`,
-      frames: [{ key: texKey, frame: 0 }],
-      frameRate: 1,
-    });
-  }
-}
-
-/**
- * Create attack pose animations from loaded Attack-Anim.png spritesheets.
- * 8 directions x N frames, played once when the pokemon fires a projectile.
- */
-export function createPmdAttackAnimations(scene: Phaser.Scene): void {
-  for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
-    if (!config.attack) continue;
-    const texKey = `pmd-${key}-attack`;
-    if (!scene.textures.exists(texKey)) continue;
-
-    const atk = config.attack;
-    const avgDur = atk.durations.reduce((a, b) => a + b, 0) / atk.durations.length;
-    const frameRate = 60 / avgDur;
-
-    for (let dir = 0; dir < 8; dir++) {
-      const dirName = PMD_DIRECTIONS[dir];
+    // Create idle animation (direction 0 = down)
+    const idleCount = animFrameCounts.get("Idle/0");
+    if (idleCount) {
       scene.anims.create({
-        key: `${key}-attack-${dirName}`,
-        frames: scene.anims.generateFrameNumbers(texKey, {
-          start: dir * atk.frameCount,
-          end: dir * atk.frameCount + atk.frameCount - 1,
+        key: `${key}-idle`,
+        frames: scene.anims.generateFrameNames(atlasKey, {
+          start: 0,
+          end: idleCount - 1,
+          zeroPad: 4,
+          prefix: `Normal/Idle/Anim/0/`,
         }),
-        frameRate,
+        frameRate: 4,
+        repeat: -1,
+      });
+    } else {
+      // Fallback: use first walk frame as idle
+      const walkDown = animFrameCounts.get("Walk/0");
+      if (walkDown) {
+        scene.anims.create({
+          key: `${key}-idle`,
+          frames: [{ key: atlasKey, frame: "Normal/Walk/Anim/0/0000" }],
+          frameRate: 1,
+        });
+      }
+    }
+
+    // Create attack animations for each direction
+    for (let dir = 0; dir < 8; dir++) {
+      const attackKey = `Attack/${dir}`;
+      const frameCount = animFrameCounts.get(attackKey);
+      if (!frameCount) continue;
+
+      scene.anims.create({
+        key: `${key}-attack-${PMD_DIRECTIONS[dir]}`,
+        frames: scene.anims.generateFrameNames(atlasKey, {
+          start: 0,
+          end: frameCount - 1,
+          zeroPad: 4,
+          prefix: `Normal/Attack/Anim/${dir}/`,
+        }),
+        frameRate: 14,
+        repeat: 0,
+      });
+    }
+
+    // Create hurt animation (direction 0 only, play once)
+    const hurtCount = animFrameCounts.get("Hurt/0");
+    if (hurtCount) {
+      scene.anims.create({
+        key: `${key}-hurt`,
+        frames: scene.anims.generateFrameNames(atlasKey, {
+          start: 0,
+          end: hurtCount - 1,
+          zeroPad: 4,
+          prefix: `Normal/Hurt/Anim/0/`,
+        }),
+        frameRate: 10,
         repeat: 0,
       });
     }
   }
+}
+
+/**
+ * No-op for backward compatibility — attack anims created in createPmdAnimations.
+ */
+export function createPmdAttackAnimations(_scene: Phaser.Scene): void {
+  // Attack animations are now created in createPmdAnimations()
 }
 
 /**

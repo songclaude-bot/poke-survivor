@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { GAME_WIDTH, GAME_HEIGHT } from "../config";
-import { POKEMON_SPRITES } from "../sprites/PmdSpriteLoader";
+import { POKEMON_SPRITES, pacTexKey } from "../sprites/PmdSpriteLoader";
 import { sfx, BGM_TRACKS } from "../audio/SfxManager";
 import { ALL_STARTERS, loadSaveData, isStarterUnlocked, type StarterDef } from "../data/SaveData";
 
@@ -37,7 +37,7 @@ export class TitleScene extends Phaser.Scene {
     const pokeKeys = Object.keys(POKEMON_SPRITES);
     for (let i = 0; i < 5; i++) {
       const key = pokeKeys[i % pokeKeys.length];
-      const texKey = `pmd-${key}`;
+      const texKey = pacTexKey(key);
       if (!this.textures.exists(texKey)) continue;
 
       const x = 30 + Math.random() * (GAME_WIDTH - 60);
@@ -309,7 +309,7 @@ export class TitleScene extends Phaser.Scene {
     }
 
     // Sprite preview
-    const texKey = `pmd-${starter.key}`;
+    const texKey = pacTexKey(starter.key);
     if (this.textures.exists(texKey)) {
       const preview = this.add.sprite(0, -65, texKey).setScale(1.5);
       if (this.anims.exists(`${starter.key}-walk-down`)) {

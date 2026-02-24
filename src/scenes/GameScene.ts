@@ -15,6 +15,7 @@ import {
   POKEMON_SPRITES,
   getDirectionFromVelocity,
   PMD_DIRECTIONS,
+  pacTexKey,
 } from "../sprites/PmdSpriteLoader";
 import { sfx, BGM_TRACKS } from "../audio/SfxManager";
 import {
@@ -511,7 +512,7 @@ export class GameScene extends Phaser.Scene {
 
   private createAce(): void {
     const aceKey = this.starterKey;
-    const texKey = `pmd-${aceKey}`;
+    const texKey = pacTexKey(aceKey);
     const usePmd = this.textures.exists(texKey);
     const sprite = this.physics.add.sprite(
       WORLD_WIDTH / 2,
@@ -992,8 +993,8 @@ export class GameScene extends Phaser.Scene {
     // Update walk animation direction for PMD sprites
     // Use current texture key (changes on evolution)
     const curTexKey = this.ace.sprite.texture.key;
-    if (curTexKey.startsWith("pmd-")) {
-      const spriteKey = curTexKey.replace("pmd-", "");
+    if (curTexKey.startsWith("pac-")) {
+      const spriteKey = curTexKey.replace("pac-", "");
       if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
         const dir = getDirectionFromVelocity(vx, vy);
         const animKey = `${spriteKey}-walk-${dir}`;
@@ -1178,7 +1179,7 @@ export class GameScene extends Phaser.Scene {
     const hpMult = (1 + tier * 0.5 + elapsed * 0.005) * cycleMult;
     const pool = GameScene.ENEMY_POOL[Math.min(tier, 1)];
     const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
-    const pmdTexKey = `pmd-${pokemonKey}`;
+    const pmdTexKey = pacTexKey(pokemonKey);
     const usePmd = this.textures.exists(pmdTexKey);
 
     const sprite = this.physics.add.sprite(x, y, usePmd ? pmdTexKey : "enemy").setDepth(5);
@@ -1216,7 +1217,7 @@ export class GameScene extends Phaser.Scene {
     // Pick from tier 1-2 pool
     const pool = [...GameScene.ENEMY_POOL[1], ...GameScene.ENEMY_POOL[2]];
     const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
-    const pmdTexKey = `pmd-${pokemonKey}`;
+    const pmdTexKey = pacTexKey(pokemonKey);
     const usePmd = this.textures.exists(pmdTexKey);
 
     const sprite = this.physics.add.sprite(ex, ey, usePmd ? pmdTexKey : "enemy-elite").setDepth(7);
@@ -1325,7 +1326,7 @@ export class GameScene extends Phaser.Scene {
     // Pick enemy pokemon based on tier
     const pool = GameScene.ENEMY_POOL[tier] ?? GameScene.ENEMY_POOL[0];
     const pokemonKey = pool[Math.floor(Math.random() * pool.length)];
-    const pmdTexKey = `pmd-${pokemonKey}`;
+    const pmdTexKey = pacTexKey(pokemonKey);
     const usePmd = this.textures.exists(pmdTexKey);
     const fallbackTex = tier >= 2 ? "enemy-elite" : "enemy";
 
@@ -1756,33 +1757,22 @@ export class GameScene extends Phaser.Scene {
     pokemonKey: string,
     angle: number,
   ): void {
-    const config = POKEMON_SPRITES[pokemonKey];
-    if (!config?.attack) return;
-
     // Determine direction from angle
     const dir = getDirectionFromVelocity(Math.cos(angle), Math.sin(angle));
     const atkAnimKey = `${pokemonKey}-attack-${dir}`;
     if (!this.anims.exists(atkAnimKey)) return;
 
-    // Temporarily switch texture to attack spritesheet
-    const atkTexKey = `pmd-${pokemonKey}-attack`;
-    if (!this.textures.exists(atkTexKey)) return;
-
-    // Save current walk texture and anim to restore after attack
-    const savedWalkTexKey = sprite.texture.key;
+    // Save current walk anim to restore after attack
+    // No texture swap needed — attack frames are in the same atlas!
     const savedWalkAnim = sprite.anims.currentAnim?.key;
 
-    sprite.setTexture(atkTexKey);
     sprite.play(atkAnimKey);
     sprite.once("animationcomplete", () => {
       // Check sprite is still valid (scene may have restarted)
       if (!sprite.active) return;
-      // Restore the walk texture the sprite had before attack (may be evolved form)
-      if (this.textures.exists(savedWalkTexKey)) {
-        sprite.setTexture(savedWalkTexKey);
-        if (savedWalkAnim && this.anims.exists(savedWalkAnim)) {
-          sprite.play(savedWalkAnim);
-        }
+      // Restore the walk animation (same atlas, just different frames)
+      if (savedWalkAnim && this.anims.exists(savedWalkAnim)) {
+        sprite.play(savedWalkAnim);
       }
     });
   }
@@ -2117,12 +2107,13 @@ export class GameScene extends Phaser.Scene {
     this.ace.attackCooldown = Math.max(200, Math.floor(this.ace.attackCooldown * (1 / spdBoost)));
 
     // Change sprite to evolved form
-    const newTexKey = `pmd-${stage.spriteKey}`;
+    const newTexKey = pacTexKey(stage.spriteKey);
     if (this.textures.exists(newTexKey)) {
       // Stop any playing animation first to prevent callbacks from restoring old texture
       this.ace.sprite.stop();
       this.ace.sprite.removeAllListeners("animationcomplete");
-      this.ace.sprite.setTexture(newTexKey, 0);
+      // Set texture to new atlas with first walk frame
+      this.ace.sprite.setTexture(newTexKey, "Normal/Walk/Anim/0/0000");
       // Play walk-down animation for the new sprite
       const walkAnim = `${stage.spriteKey}-walk-down`;
       if (this.anims.exists(walkAnim)) {
@@ -2164,7 +2155,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private evolveCompanion(companion: CompanionData): void {
-    const chain = EVOLUTION_CHAINS[companion.sprite.texture.key.replace("pmd-", "")];
+    const chain = EVOLUTION_CHAINS[companion.sprite.texture.key.replace("pac-", "")];
     const currentStage = this.companionEvoStages.get(companion.sprite.texture.key) ?? 0;
     if (!chain || currentStage >= chain.length - 1) return;
 
@@ -2198,7 +2189,7 @@ export class GameScene extends Phaser.Scene {
     const pool = GameScene.COMPANION_POOL[this.companions.length % GameScene.COMPANION_POOL.length];
     const type = pool.type;
     const pokemonKey = pool.key;
-    const pmdTexKey = `pmd-${pokemonKey}`;
+    const pmdTexKey = pacTexKey(pokemonKey);
     const usePmd = this.textures.exists(pmdTexKey);
 
     const sprite = this.physics.add
@@ -2729,7 +2720,7 @@ export class GameScene extends Phaser.Scene {
     // Boss variety based on cycle
     const bossPool = ["pinsir", "geodude", "gastly", "snorlax", "onix", "lapras", "aerodactyl", "scyther"];
     const bossKey = bossPool[(this.cycleNumber - 1 + this.waveNumber) % bossPool.length];
-    const pmdTexKey = `pmd-${bossKey}`;
+    const pmdTexKey = pacTexKey(bossKey);
     const usePmd = this.textures.exists(pmdTexKey);
 
     const sprite = this.physics.add.sprite(bx, by, usePmd ? pmdTexKey : "boss").setDepth(12);
@@ -2845,7 +2836,7 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0);
 
     const companionNames = this.companions.map((c) => {
-      const key = c.sprite.texture.key.replace("pmd-", "");
+      const key = c.sprite.texture.key.replace("pac-", "");
       return POKEMON_SPRITES[key]?.name ?? key;
     });
     this.add
