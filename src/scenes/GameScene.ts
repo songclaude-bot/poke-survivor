@@ -95,6 +95,7 @@ interface CompanionData {
 interface XpGem {
   sprite: Phaser.Physics.Arcade.Sprite;
   value: number;
+  magnetized?: boolean;
 }
 
 type ItemType = "heal" | "bomb" | "magnet";
@@ -1604,6 +1605,8 @@ export class GameScene extends Phaser.Scene {
   /**
    * Play the attack pose animation on a pokemon sprite, then return to walk anim.
    * Uses the Attack-Anim.png spritesheet loaded from PMDCollab.
+   * Always uses the base starter's attack sheet, but restores to whatever
+   * walk texture the sprite currently has (e.g. evolved form).
    */
   private playAttackPose(
     sprite: Phaser.Physics.Arcade.Sprite,
@@ -1622,18 +1625,20 @@ export class GameScene extends Phaser.Scene {
     const atkTexKey = `pmd-${pokemonKey}-attack`;
     if (!this.textures.exists(atkTexKey)) return;
 
-    // Save current walk anim key to restore later
-    const currentAnim = sprite.anims.currentAnim?.key;
+    // Save current walk texture and anim to restore after attack
+    const savedWalkTexKey = sprite.texture.key;
+    const savedWalkAnim = sprite.anims.currentAnim?.key;
 
     sprite.setTexture(atkTexKey);
     sprite.play(atkAnimKey);
     sprite.once("animationcomplete", () => {
-      // Restore walk texture and animation
-      const walkTexKey = `pmd-${pokemonKey}`;
-      if (this.textures.exists(walkTexKey)) {
-        sprite.setTexture(walkTexKey);
-        if (currentAnim && this.anims.exists(currentAnim)) {
-          sprite.play(currentAnim);
+      // Check sprite is still valid (scene may have restarted)
+      if (!sprite.active) return;
+      // Restore the walk texture the sprite had before attack (may be evolved form)
+      if (this.textures.exists(savedWalkTexKey)) {
+        sprite.setTexture(savedWalkTexKey);
+        if (savedWalkAnim && this.anims.exists(savedWalkAnim)) {
+          sprite.play(savedWalkAnim);
         }
       }
     });
@@ -1778,15 +1783,14 @@ export class GameScene extends Phaser.Scene {
         gem.sprite.y,
       );
 
-      if (dist < magnetRange) {
-        // Magnet pull toward player
+      if (dist < magnetRange || gem.magnetized) {
+        // Once magnetized, keep pulling until collected
+        gem.magnetized = true;
         const angle = Math.atan2(ay - gem.sprite.y, ax - gem.sprite.x);
         gem.sprite.setVelocity(
           Math.cos(angle) * magnetSpeed,
           Math.sin(angle) * magnetSpeed,
         );
-      } else {
-        gem.sprite.setVelocity(0, 0);
       }
     }
   }
