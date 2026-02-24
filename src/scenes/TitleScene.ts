@@ -50,10 +50,10 @@ export class TitleScene extends Phaser.Scene {
       if (!this.textures.exists(texKey)) continue;
 
       const x = 40 + Math.random() * (GAME_WIDTH - 80);
-      const y = 200 + Math.random() * 400;
+      const y = 560 + Math.random() * 180;
       const sprite = this.add.sprite(x, y, texKey).setDepth(1);
-      sprite.setAlpha(0.15 + Math.random() * 0.15);
-      sprite.setScale(1.5 + Math.random() * 1.0);
+      sprite.setAlpha(0.25 + Math.random() * 0.15);
+      sprite.setScale(1.2 + Math.random() * 0.6);
       if (this.anims.exists(`${key}-walk-down`)) {
         sprite.play(`${key}-walk-down`);
       }
@@ -229,23 +229,6 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(10);
 
-    // Pikachu portrait as "mascot" if available
-    if (this.textures.exists("portrait-pikachu")) {
-      const mascot = this.add
-        .image(GAME_WIDTH / 2, 390, "portrait-pikachu")
-        .setDisplaySize(80, 80)
-        .setDepth(10);
-
-      this.tweens.add({
-        targets: mascot,
-        y: mascot.y + 8,
-        duration: 1500,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut",
-      });
-    }
-
     // Start title BGM
     sfx.init();
     sfx.startBgm(BGM_TRACKS.title);
@@ -253,9 +236,13 @@ export class TitleScene extends Phaser.Scene {
     // Fade in
     this.cameras.main.fadeIn(600, 0, 0, 0);
 
-    // Start button area
-    startText.setInteractive({ useHandCursor: true });
-    startText.on("pointerdown", () => {
+    // Start button — wide invisible hit area behind text for better touch
+    const startHit = this.add
+      .rectangle(GAME_WIDTH / 2, 510, GAME_WIDTH - 40, 60, 0x000000, 0)
+      .setDepth(9)
+      .setInteractive({ useHandCursor: true });
+
+    startHit.on("pointerdown", () => {
       sfx.stopBgm();
       sfx.playStart();
       const starter = STARTERS[this.selectedStarter];
