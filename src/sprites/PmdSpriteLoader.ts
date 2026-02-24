@@ -183,6 +183,55 @@ export const POKEMON_SPRITES: Record<string, PmdSpriteConfig> = {
       rushFrame: 1, hitFrame: 3, returnFrame: 6,
     },
   },
+  // -- Evolution sprites --
+  raichu: {
+    id: "0026",
+    name: "Raichu",
+    walkFrames: 4,
+    frameWidth: 40,
+    frameHeight: 40,
+    durations: [8, 10, 8, 10],
+  },
+  charmeleon: {
+    id: "0005",
+    name: "Charmeleon",
+    walkFrames: 4,
+    frameWidth: 40,
+    frameHeight: 40,
+    durations: [8, 10, 8, 10],
+  },
+  wartortle: {
+    id: "0008",
+    name: "Wartortle",
+    walkFrames: 4,
+    frameWidth: 40,
+    frameHeight: 40,
+    durations: [8, 10, 8, 10],
+  },
+  ivysaur: {
+    id: "0002",
+    name: "Ivysaur",
+    walkFrames: 4,
+    frameWidth: 48,
+    frameHeight: 40,
+    durations: [8, 10, 8, 10],
+  },
+  haunter: {
+    id: "0093",
+    name: "Haunter",
+    walkFrames: 4,
+    frameWidth: 56,
+    frameHeight: 48,
+    durations: [8, 10, 8, 10],
+  },
+  graveler: {
+    id: "0075",
+    name: "Graveler",
+    walkFrames: 4,
+    frameWidth: 40,
+    frameHeight: 40,
+    durations: [8, 10, 8, 10],
+  },
 };
 
 /**

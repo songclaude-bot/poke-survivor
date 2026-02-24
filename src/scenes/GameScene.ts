@@ -134,6 +134,7 @@ interface CyclePassData {
 // -- Evolution data --
 interface EvolutionStage {
   name: string;
+  spriteKey: string; // key in POKEMON_SPRITES (e.g. "raichu")
   atkMult: number;
   hpMult: number;
   speedMult: number;
@@ -142,29 +143,29 @@ interface EvolutionStage {
 
 const EVOLUTION_CHAINS: Record<string, EvolutionStage[]> = {
   pikachu: [
-    { name: "Pikachu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.5 },
-    { name: "Raichu ★", atkMult: 1.5, hpMult: 1.3, speedMult: 1.15, scale: 1.7 },
-    { name: "Raichu GX ★★", atkMult: 2.2, hpMult: 1.8, speedMult: 1.3, scale: 1.9 },
+    { name: "Pikachu", spriteKey: "pikachu", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.5 },
+    { name: "Raichu ★", spriteKey: "raichu", atkMult: 1.5, hpMult: 1.3, speedMult: 1.15, scale: 1.5 },
+    { name: "Raichu GX ★★", spriteKey: "raichu", atkMult: 2.2, hpMult: 1.8, speedMult: 1.3, scale: 1.7 },
   ],
   squirtle: [
-    { name: "Squirtle", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Wartortle ★", atkMult: 1.5, hpMult: 1.4, speedMult: 1.1, scale: 1.4 },
+    { name: "Squirtle", spriteKey: "squirtle", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Wartortle ★", spriteKey: "wartortle", atkMult: 1.5, hpMult: 1.4, speedMult: 1.1, scale: 1.3 },
   ],
   charmander: [
-    { name: "Charmander", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Charmeleon ★", atkMult: 1.6, hpMult: 1.3, speedMult: 1.15, scale: 1.4 },
+    { name: "Charmander", spriteKey: "charmander", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Charmeleon ★", spriteKey: "charmeleon", atkMult: 1.6, hpMult: 1.3, speedMult: 1.15, scale: 1.3 },
   ],
   bulbasaur: [
-    { name: "Bulbasaur", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Ivysaur ★", atkMult: 1.4, hpMult: 1.5, speedMult: 1.1, scale: 1.4 },
+    { name: "Bulbasaur", spriteKey: "bulbasaur", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Ivysaur ★", spriteKey: "ivysaur", atkMult: 1.4, hpMult: 1.5, speedMult: 1.1, scale: 1.3 },
   ],
   gastly: [
-    { name: "Gastly", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Haunter ★", atkMult: 1.7, hpMult: 1.2, speedMult: 1.2, scale: 1.4 },
+    { name: "Gastly", spriteKey: "gastly", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Haunter ★", spriteKey: "haunter", atkMult: 1.7, hpMult: 1.2, speedMult: 1.2, scale: 1.3 },
   ],
   geodude: [
-    { name: "Geodude", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
-    { name: "Graveler ★", atkMult: 1.4, hpMult: 1.6, speedMult: 1.0, scale: 1.5 },
+    { name: "Geodude", spriteKey: "geodude", atkMult: 1, hpMult: 1, speedMult: 1, scale: 1.2 },
+    { name: "Graveler ★", spriteKey: "graveler", atkMult: 1.4, hpMult: 1.6, speedMult: 1.0, scale: 1.3 },
   ],
 };
 
@@ -313,6 +314,7 @@ export class GameScene extends Phaser.Scene {
   private starterKey = "pikachu";
 
   init(data?: CyclePassData): void {
+    this.cycleTransitioning = false;
     if (data?.cycleNumber) this.cycleNumber = data.cycleNumber;
     if (data?.legions) this.legions = [...data.legions];
     if (data?.starterKey) this.starterKey = data.starterKey;
@@ -350,9 +352,7 @@ export class GameScene extends Phaser.Scene {
     const lines = [
       "HOW TO PLAY",
       "",
-      "LEFT side: drag to move",
-      "RIGHT side: tap to dodge",
-      "",
+      "Drag anywhere to move",
       "Auto-attack nearest enemy",
       "Collect XP gems to level up",
       "Survive waves & defeat the boss!",
@@ -761,14 +761,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createJoystick(): void {
-    const jx = 80;
+    // Fixed joystick at bottom center
+    const jx = GAME_WIDTH / 2;
     const jy = GAME_HEIGHT - 100;
 
     this.joyBase = this.add
       .sprite(jx, jy, "joy-base")
       .setDepth(90)
       .setScrollFactor(0)
-      .setAlpha(0.5);
+      .setAlpha(0.4);
 
     this.joyThumb = this.add
       .sprite(jx, jy, "joy-thumb")
@@ -777,10 +778,9 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
       if (this.isPaused) return;
-      // Entire screen: joystick (single thumb control)
       this.joyPointer = p;
-      this.joyBase.setPosition(p.x, p.y).setAlpha(0.5);
-      this.joyThumb.setPosition(p.x, p.y);
+      this.joyBase.setAlpha(0.6);
+      this.updateJoystick(p);
     });
 
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -793,13 +793,13 @@ export class GameScene extends Phaser.Scene {
         this.joyPointer = null;
         this.joyVector.set(0, 0);
         this.joyThumb.setPosition(this.joyBase.x, this.joyBase.y);
-        this.joyBase.setAlpha(0.3);
+        this.joyBase.setAlpha(0.4);
       }
     });
   }
 
   private updateJoystick(p: Phaser.Input.Pointer): void {
-    const maxDist = 40;
+    const maxDist = 50;
     const dx = p.x - this.joyBase.x;
     const dy = p.y - this.joyBase.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -943,10 +943,13 @@ export class GameScene extends Phaser.Scene {
     this.ace.sprite.setVelocity(vx, vy);
 
     // Update walk animation direction for PMD sprites
-    if (this.textures.exists(`pmd-${this.ace.pokemonKey}`)) {
+    // Use current texture key (changes on evolution)
+    const curTexKey = this.ace.sprite.texture.key;
+    if (curTexKey.startsWith("pmd-")) {
+      const spriteKey = curTexKey.replace("pmd-", "");
       if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
         const dir = getDirectionFromVelocity(vx, vy);
-        const animKey = `${this.ace.pokemonKey}-walk-${dir}`;
+        const animKey = `${spriteKey}-walk-${dir}`;
         if (this.ace.sprite.anims.currentAnim?.key !== animKey) {
           this.ace.sprite.play(animKey);
         }
@@ -1966,7 +1969,16 @@ export class GameScene extends Phaser.Scene {
     this.ace.speed = Math.floor(this.ace.speed * spdBoost);
     this.ace.attackCooldown = Math.max(200, Math.floor(this.ace.attackCooldown * (1 / spdBoost)));
 
-    // Scale up sprite
+    // Change sprite to evolved form
+    const newTexKey = `pmd-${stage.spriteKey}`;
+    if (this.textures.exists(newTexKey)) {
+      this.ace.sprite.setTexture(newTexKey);
+      // Play walk-down animation for the new sprite
+      const walkAnim = `${stage.spriteKey}-walk-down`;
+      if (this.anims.exists(walkAnim)) {
+        this.ace.sprite.play(walkAnim);
+      }
+    }
     this.ace.sprite.setScale(stage.scale);
 
     // Evolution flash effect
@@ -2739,24 +2751,17 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private cycleTransitioning = false;
+
   private startNextCycle(): void {
+    if (this.cycleTransitioning) return; // Prevent double-call
+    this.cycleTransitioning = true;
     sfx.stopBgm();
     const nextCycle = this.cycleNumber + 1;
     const savedLegions = [...this.legions];
 
-    // Clean up all game objects
-    for (const e of this.enemies) {
-      e.sprite.destroy();
-      e.hpBar.destroy();
-    }
-    for (const p of this.projectiles) p.sprite.destroy();
-    for (const ep of this.enemyProjectiles) ep.sprite.destroy();
-    for (const g of this.xpGems) g.sprite.destroy();
-    for (const c of this.companions) c.sprite.destroy();
-    for (const le of this.legionEntities) le.gfx.destroy();
-    this.ace.sprite.destroy();
-
-    // Restart scene with persistent data
+    // scene.restart() will destroy all game objects automatically
+    // so we just pass persistent data and let Phaser handle cleanup
     this.scene.restart({ cycleNumber: nextCycle, legions: savedLegions, starterKey: this.starterKey, totalTime: this.totalSurvivalTime });
   }
 
@@ -3080,8 +3085,11 @@ export class GameScene extends Phaser.Scene {
   private closeLevelUpSelection(): void {
     this.levelUpContainer.setVisible(false);
     this.levelUpContainer.removeAll(true);
-    this.isPaused = false;
     this.pendingLevelUp = false;
+    // Delay unpause to prevent the same pointerdown from triggering joystick
+    this.time.delayedCall(100, () => {
+      this.isPaused = false;
+    });
   }
 
   // ================================================================
