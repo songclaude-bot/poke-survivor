@@ -337,6 +337,50 @@ export class GameScene extends Phaser.Scene {
 
     // Fade in from black
     this.cameras.main.fadeIn(500, 0, 0, 0);
+
+    // Show tutorial on first cycle
+    if (this.cycleNumber === 1) {
+      this.showTutorial();
+    }
+  }
+
+  private showTutorial(): void {
+    this.isPaused = true;
+    const overlay = this.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
+      .setScrollFactor(0)
+      .setDepth(500);
+
+    const lines = [
+      "HOW TO PLAY",
+      "",
+      "LEFT side: drag to move",
+      "RIGHT side: tap to dodge",
+      "",
+      "Auto-attack nearest enemy",
+      "Collect XP gems to level up",
+      "Survive waves & defeat the boss!",
+      "",
+      "[ Tap to Start ]",
+    ];
+    const text = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, lines.join("\n"), {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: "#fff",
+        align: "center",
+        lineSpacing: 6,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(501);
+
+    overlay.setInteractive();
+    overlay.once("pointerdown", () => {
+      overlay.destroy();
+      text.destroy();
+      this.isPaused = false;
+    });
   }
 
   // ================================================================
@@ -1070,7 +1114,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showWaveClearText(): void {
-    // Auto-evolve companions every 5 waves
     // Auto-evolve companions every 5 waves
     if (this.waveNumber > 0 && this.waveNumber % 5 === 0) {
       for (const c of this.companions) {

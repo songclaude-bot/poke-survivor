@@ -210,7 +210,7 @@ export class TitleScene extends Phaser.Scene {
 
     // Version
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v1.2.0 — Endless", {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v2.0.0 — Complete", {
         fontFamily: "monospace",
         fontSize: "9px",
         color: "#444",
