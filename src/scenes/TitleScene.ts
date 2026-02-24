@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { GAME_WIDTH, GAME_HEIGHT } from "../config";
 import { POKEMON_SPRITES } from "../sprites/PmdSpriteLoader";
-import { sfx } from "../audio/SfxManager";
+import { sfx, BGM_TRACKS } from "../audio/SfxManager";
 
 /**
  * TitleScene — Start screen with animated background and tap-to-start.
@@ -246,13 +246,17 @@ export class TitleScene extends Phaser.Scene {
       });
     }
 
+    // Start title BGM
+    sfx.init();
+    sfx.startBgm(BGM_TRACKS.title);
+
     // Fade in
     this.cameras.main.fadeIn(600, 0, 0, 0);
 
     // Start button area
     startText.setInteractive({ useHandCursor: true });
     startText.on("pointerdown", () => {
-      sfx.init();
+      sfx.stopBgm();
       sfx.playStart();
       const starter = STARTERS[this.selectedStarter];
       this.cameras.main.fadeOut(300, 0, 0, 0);

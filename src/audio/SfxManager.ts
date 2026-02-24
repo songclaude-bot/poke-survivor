@@ -1,230 +1,162 @@
 /**
- * SfxManager — Procedural 8-bit sound effects using Web Audio API.
- * No external audio files needed.
+ * SfxManager — Real PMD audio from pokemonAutoChess resources.
+ * BGM: PMD dungeon music (.ogg) via HTMLAudioElement
+ * SFX: pokemonAutoChess sound effects (.ogg) via HTMLAudioElement pool
+ *
+ * Resources:
+ *   - Music: github.com/keldaanCommunity/pokemonAutoChessMusic (CC BY-NC 4.0)
+ *   - SFX:   github.com/keldaanCommunity/pokemonAutoChess (GPL-3.0)
  */
+
+/** BGM tracks mapped to game contexts */
+export const BGM_TRACKS = {
+  title: "Top Menu Theme",
+  gameplay: ["Amp Plains", "Crystal Cave", "Mt. Blaze", "Treasure Town"],
+  boss: "Boss Battle!",
+  bossLegendary: "Versus Legendary",
+  danger: "Monster House",
+  victory: "Job Clear!",
+} as const;
+
+/** SFX file keys → asset filenames */
+const SFX_FILES: Record<string, string> = {
+  hit: "refresh",
+  pickup: "carouselunlock",
+  levelUp: "evolutiont2",
+  evolution: "evolutiont3",
+  death: "finish8",
+  bossWarning: "notification",
+  stageClear: "finish1",
+  start: "startgame",
+  click: "buttonclick",
+};
+
 export class SfxManager {
-  private ctx: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
+  private sounds: Map<string, HTMLAudioElement[]> = new Map();
+  private masterVolume = 0.3;
+  private bgmElement: HTMLAudioElement | null = null;
+  private bgmPlaying = false;
+  private currentBgmTrack = "";
   private initialized = false;
 
   /** Must be called from a user gesture (tap/click) */
   init(): void {
     if (this.initialized) return;
-    try {
-      this.ctx = new AudioContext();
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.3;
-      this.masterGain.connect(this.ctx.destination);
-      this.initialized = true;
-    } catch {
-      // Web Audio not available
+    this.preloadSfx();
+    this.initialized = true;
+  }
+
+  private preloadSfx(): void {
+    for (const [key, file] of Object.entries(SFX_FILES)) {
+      const pool: HTMLAudioElement[] = [];
+      for (let i = 0; i < 3; i++) {
+        const audio = new Audio(`assets/sounds/${file}.ogg`);
+        audio.volume = this.masterVolume;
+        audio.preload = "auto";
+        pool.push(audio);
+      }
+      this.sounds.set(key, pool);
     }
+  }
+
+  private playSfx(key: string, volumeMult = 1.0): void {
+    const pool = this.sounds.get(key);
+    if (!pool) return;
+    const audio = pool.find((a) => a.paused || a.ended) ?? pool[0];
+    audio.volume = Math.min(1, this.masterVolume * volumeMult);
+    audio.currentTime = 0;
+    audio.play().catch(() => { /* autoplay policy */ });
   }
 
   adjustVolume(delta: number): void {
-    if (!this.masterGain) return;
-    this.masterGain.gain.value = Math.max(0, Math.min(1, this.masterGain.gain.value + delta));
-  }
-
-  private ensureContext(): boolean {
-    if (!this.ctx || !this.masterGain) return false;
-    if (this.ctx.state === "suspended") {
-      this.ctx.resume();
+    this.masterVolume = Math.max(0, Math.min(1, this.masterVolume + delta));
+    if (this.bgmElement) {
+      this.bgmElement.volume = this.masterVolume * 0.4;
     }
-    return true;
   }
 
-  /** Quick blip for projectile hit */
+  // ---- SFX methods (same public API as before) --------------------
+
   playHit(): void {
-    if (!this.ensureContext()) return;
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.setValueAtTime(800, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.08);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-    osc.connect(gain);
-    gain.connect(this.masterGain!);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.1);
+    this.playSfx("hit", 0.5);
   }
 
-  /** XP gem pickup */
   playPickup(): void {
-    if (!this.ensureContext()) return;
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(600, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.06);
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-    osc.connect(gain);
-    gain.connect(this.masterGain!);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.1);
+    this.playSfx("pickup", 0.6);
   }
 
-  /** Level up fanfare */
   playLevelUp(): void {
-    if (!this.ensureContext()) return;
-    const ctx = this.ctx!;
-    const notes = [523, 659, 784, 1047]; // C5, E5, G5, C6
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "square";
-      const t = ctx.currentTime + i * 0.08;
-      osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(0.12, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(t);
-      osc.stop(t + 0.2);
-    });
+    this.playSfx("levelUp");
   }
 
-  /** Player death */
   playDeath(): void {
-    if (!this.ensureContext()) return;
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(400, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.5);
-    gain.gain.setValueAtTime(0.2, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
-    osc.connect(gain);
-    gain.connect(this.masterGain!);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.7);
+    this.playSfx("death");
   }
 
-  /** Boss warning horn */
   playBossWarning(): void {
-    if (!this.ensureContext()) return;
-    const ctx = this.ctx!;
-    for (let i = 0; i < 3; i++) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "square";
-      const t = ctx.currentTime + i * 0.25;
-      osc.frequency.setValueAtTime(220, t);
-      osc.frequency.setValueAtTime(330, t + 0.1);
-      gain.gain.setValueAtTime(0.15, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(t);
-      osc.stop(t + 0.25);
-    }
+    this.playSfx("bossWarning", 0.8);
   }
 
-  /** Stage clear jingle */
   playStageClear(): void {
-    if (!this.ensureContext()) return;
-    const ctx = this.ctx!;
-    const notes = [523, 659, 784, 1047, 784, 1047, 1319]; // ascending fanfare
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "square";
-      const t = ctx.currentTime + i * 0.1;
-      osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(0.1, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(t);
-      osc.stop(t + 0.2);
-    });
+    this.playSfx("stageClear");
   }
 
-  // ----------------------------------------------------------------
-  // BGM — procedural 8-bit loop using arpeggiated chords
-  // ----------------------------------------------------------------
+  playStart(): void {
+    this.playSfx("start");
+  }
 
-  private bgmNodes: OscillatorNode[] = [];
-  private bgmGain: GainNode | null = null;
-  private bgmPlaying = false;
+  playClick(): void {
+    this.playSfx("click", 0.5);
+  }
 
-  startBgm(): void {
-    if (!this.ensureContext() || this.bgmPlaying) return;
-    const ctx = this.ctx!;
-    this.bgmGain = ctx.createGain();
-    this.bgmGain.gain.value = 0.06;
-    this.bgmGain.connect(this.masterGain!);
+  // ---- BGM — real PMD dungeon music --------------------------------
 
-    // Bass line — looping pattern
-    const bassNotes = [131, 165, 147, 175]; // C3, E3, D3, F3
-    const bass = ctx.createOscillator();
-    bass.type = "triangle";
-    bass.frequency.setValueAtTime(bassNotes[0], ctx.currentTime);
+  /** Start BGM. Picks a random gameplay track unless overridden. */
+  startBgm(trackOverride?: string): void {
+    if (this.bgmPlaying) this.stopBgm();
 
-    // Schedule repeating bass pattern
-    const beatLen = 0.4;
-    const patternLen = bassNotes.length * beatLen;
-    for (let rep = 0; rep < 200; rep++) {
-      for (let i = 0; i < bassNotes.length; i++) {
-        const t = ctx.currentTime + rep * patternLen + i * beatLen;
-        bass.frequency.setValueAtTime(bassNotes[i], t);
-      }
-    }
-    bass.connect(this.bgmGain);
-    bass.start(ctx.currentTime);
+    const track =
+      trackOverride ??
+      BGM_TRACKS.gameplay[
+        Math.floor(Math.random() * BGM_TRACKS.gameplay.length)
+      ];
 
-    // Arpeggio layer
-    const arpNotes = [523, 659, 784, 659, 587, 698, 784, 698]; // C5 E5 G5 E5 D5 F5 G5 F5
-    const arp = ctx.createOscillator();
-    arp.type = "square";
-    const arpGain = ctx.createGain();
-    arpGain.gain.value = 0.03;
-    arp.frequency.setValueAtTime(arpNotes[0], ctx.currentTime);
-
-    const arpBeat = 0.2;
-    const arpPatternLen = arpNotes.length * arpBeat;
-    for (let rep = 0; rep < 400; rep++) {
-      for (let i = 0; i < arpNotes.length; i++) {
-        const t = ctx.currentTime + rep * arpPatternLen + i * arpBeat;
-        arp.frequency.setValueAtTime(arpNotes[i], t);
-      }
-    }
-    arp.connect(arpGain);
-    arpGain.connect(this.bgmGain);
-    arp.start(ctx.currentTime);
-
-    this.bgmNodes = [bass, arp];
+    this.currentBgmTrack = track;
+    this.bgmElement = new Audio(`assets/musics/${track}.ogg`);
+    this.bgmElement.loop = true;
+    this.bgmElement.volume = this.masterVolume * 0.4;
+    this.bgmElement.play().catch(() => { /* autoplay policy */ });
     this.bgmPlaying = true;
   }
 
-  stopBgm(): void {
-    for (const node of this.bgmNodes) {
-      try { node.stop(); } catch { /* already stopped */ }
+  /** Crossfade to a different BGM track */
+  switchBgm(track: string): void {
+    if (this.currentBgmTrack === track) return;
+    if (this.bgmElement) {
+      const old = this.bgmElement;
+      const fade = setInterval(() => {
+        if (old.volume > 0.05) {
+          old.volume = Math.max(0, old.volume - 0.05);
+        } else {
+          clearInterval(fade);
+          old.pause();
+          old.src = "";
+          this.startBgm(track);
+        }
+      }, 50);
+    } else {
+      this.startBgm(track);
     }
-    this.bgmNodes = [];
-    this.bgmPlaying = false;
   }
 
-  /** Start game blip */
-  playStart(): void {
-    if (!this.ensureContext()) return;
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.setValueAtTime(440, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-    osc.connect(gain);
-    gain.connect(this.masterGain!);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.25);
+  stopBgm(): void {
+    if (this.bgmElement) {
+      this.bgmElement.pause();
+      this.bgmElement.src = "";
+      this.bgmElement = null;
+    }
+    this.bgmPlaying = false;
+    this.currentBgmTrack = "";
   }
 }
 

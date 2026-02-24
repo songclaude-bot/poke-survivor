@@ -5,6 +5,10 @@ import {
   loadPmdPortraits,
   createPmdAnimations,
 } from "../sprites/PmdSpriteLoader";
+import {
+  loadAttackEffects,
+  createAttackAnimations,
+} from "../effects/AttackEffects";
 
 /**
  * BootScene — Generate placeholder graphics & load PMD sprites.
@@ -27,6 +31,9 @@ export class BootScene extends Phaser.Scene {
     loadPmdSprites(this);
     loadPmdPortraits(this);
 
+    // Load attack effect sprites from pokemonAutoChess resources
+    loadAttackEffects(this);
+
     // Show loading progress
     const loadTxt = this.add.text(195, 422, "Loading sprites...", {
       fontFamily: "monospace",
@@ -46,6 +53,8 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     // Create PMD walk animations
     createPmdAnimations(this);
+    // Create attack effect animations
+    createAttackAnimations(this);
     this.scene.start("TitleScene");
   }
 

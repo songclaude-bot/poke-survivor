@@ -13,7 +13,12 @@ import {
   POKEMON_SPRITES,
   getDirectionFromVelocity,
 } from "../sprites/PmdSpriteLoader";
-import { sfx } from "../audio/SfxManager";
+import { sfx, BGM_TRACKS } from "../audio/SfxManager";
+import {
+  STARTER_ATTACK_TYPE,
+  playHitEffect,
+  type AttackType,
+} from "../effects/AttackEffects";
 
 /* ================================================================
    GameScene — Core prototype
@@ -885,6 +890,7 @@ export class GameScene extends Phaser.Scene {
     if (elapsed >= 180 && !this.bossWarningShown) {
       this.bossWarningShown = true;
       sfx.playBossWarning();
+      sfx.switchBgm(BGM_TRACKS.danger);
       this.showWarning("WARNING!");
     }
 
@@ -1570,14 +1576,25 @@ export class GameScene extends Phaser.Scene {
       old.sprite.destroy();
     }
 
+    // Use type-specific projectile sprite if available
+    const atkType: AttackType = STARTER_ATTACK_TYPE[this.starterKey] ?? "NORMAL";
+    const rangeAnimKey = `atk-${atkType}-range`;
+    const rangeFrameKey = `atk-${atkType}-range-0`;
+    const useEffect = this.textures.exists(rangeFrameKey) && this.anims.exists(rangeAnimKey);
+
     const sprite = this.physics.add
-      .sprite(fromX, fromY, "projectile")
+      .sprite(fromX, fromY, useEffect ? rangeFrameKey : "projectile")
       .setDepth(8);
+    if (useEffect) {
+      sprite.play(rangeAnimKey);
+      sprite.setScale(1.5);
+    }
     this.projectileGroup.add(sprite);
 
     const angle = Math.atan2(toY - fromY, toX - fromX);
     const speed = 300;
     sprite.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+    sprite.setRotation(angle);
 
     const pierce = 1 + this.aceEvoStage; // More pierce with evolution
     this.projectiles.push({ sprite, damage, pierce });
@@ -1610,6 +1627,10 @@ export class GameScene extends Phaser.Scene {
     enemy.hp -= finalDamage;
     proj.pierce--;
     sfx.playHit();
+
+    // Play type-based hit effect
+    const atkType: AttackType = STARTER_ATTACK_TYPE[this.starterKey] ?? "NORMAL";
+    playHitEffect(this, enemy.sprite.x, enemy.sprite.y, atkType);
 
     // Lifesteal
     if (this.lifestealRate > 0 && this.ace.hp < this.ace.maxHp) {
@@ -2523,12 +2544,18 @@ export class GameScene extends Phaser.Scene {
     this.bossNameText.setText(`${bossName} — Cycle ${this.cycleNumber}`).setVisible(true);
 
     this.showWarning("BOSS!");
+
+    // Switch to boss battle BGM
+    sfx.switchBgm(this.cycleNumber >= 3 ? BGM_TRACKS.bossLegendary : BGM_TRACKS.boss);
   }
 
   private onBossDefeated(): void {
     this.boss = null;
     this.isPaused = true;
+    sfx.stopBgm();
     sfx.playStageClear();
+    // Play victory BGM after a short delay
+    this.time.delayedCall(500, () => sfx.startBgm(BGM_TRACKS.victory));
 
     // Victory flash
     const flash = this.add
@@ -2663,6 +2690,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private startNextCycle(): void {
+    sfx.stopBgm();
     const nextCycle = this.cycleNumber + 1;
     const savedLegions = [...this.legions];
 

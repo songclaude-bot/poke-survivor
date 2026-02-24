@@ -22,9 +22,19 @@
 
 ### 사운드 & BGM
 
-- **Pokemon Mystery Dungeon** 시리즈의 음악을 사용합니다.
+- **BGM**: [pokemonAutoChessMusic](https://github.com/keldaanCommunity/pokemonAutoChessMusic) — PMD 던전 음악 8곡 (.ogg)
+  - Top Menu Theme, Amp Plains, Crystal Cave, Mt. Blaze, Treasure Town
+  - Boss Battle!, Versus Legendary, Monster House!, Job Clear!
+- **SFX**: [pokemonAutoChess](https://github.com/keldaanCommunity/pokemonAutoChess) — 효과음 9종 (.ogg)
+  - evolutiont2, evolutiont3, buttonclick, finish1, finish8, startgame, notification, carouselunlock, refresh
 - 원본 음악 저작권: The Pokémon Company / Nintendo / Spike Chunsoft
 - 비상업적 팬게임 목적으로만 사용됩니다.
+
+### 공격 이펙트 스프라이트
+
+- **출처**: [pokemonAutoChess](https://github.com/keldaanCommunity/pokemonAutoChess) — `attacks{tps}/` 디렉토리
+- ELECTRIC, FIRE, WATER, NORMAL 타입의 range/hit 애니메이션 프레임 74장
+- 라이선스: GPL v3
 
 ## 게임 데이터
 
