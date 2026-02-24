@@ -98,7 +98,7 @@ export class TitleScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    // High score from localStorage
+    // High score + achievements from localStorage
     try {
       const raw = localStorage.getItem("poke-survivor-data");
       if (raw) {
@@ -106,10 +106,21 @@ export class TitleScene extends Phaser.Scene {
         const hs = data.highScore;
         if (hs && hs.kills > 0) {
           this.add
-            .text(GAME_WIDTH / 2, GAME_HEIGHT - 100, `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
+            .text(GAME_WIDTH / 2, GAME_HEIGHT - 120, `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
               fontFamily: "monospace",
               fontSize: "10px",
               color: "#fbbf24",
+            })
+            .setOrigin(0.5)
+            .setDepth(10);
+        }
+        const unlocked = data.unlockedAchievements?.length ?? 0;
+        if (unlocked > 0) {
+          this.add
+            .text(GAME_WIDTH / 2, GAME_HEIGHT - 105, `★ ${unlocked}/13 Achievements`, {
+              fontFamily: "monospace",
+              fontSize: "9px",
+              color: "#a78bfa",
             })
             .setOrigin(0.5)
             .setDepth(10);
@@ -119,7 +130,7 @@ export class TitleScene extends Phaser.Scene {
 
     // Version
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v0.14.0 — Achievement Update", {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 60, "v1.0.0 — Release", {
         fontFamily: "monospace",
         fontSize: "9px",
         color: "#444",
@@ -154,6 +165,9 @@ export class TitleScene extends Phaser.Scene {
         ease: "Sine.easeInOut",
       });
     }
+
+    // Fade in
+    this.cameras.main.fadeIn(600, 0, 0, 0);
 
     // Input: tap anywhere to start
     this.input.once("pointerdown", () => {
