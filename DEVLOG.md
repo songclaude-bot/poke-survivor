@@ -1,5 +1,55 @@
 # Poke Survivor - Development Log
 
+## 2026-02-25 (Session 9) — Lobby Overhaul & Meta Progression
+
+### Changes
+- **LobbyScene fully rewritten** — tab-based hub with 4 tabs:
+  - **Play tab**: Grid starter selection (5-column), detail card with evo chain preview, coin unlock for locked starters
+  - **Shop tab**: 8 permanent upgrades (HP, ATK, Speed, XP Gain, Crit, Regen, Magnet, Coin Bonus) with scaling costs
+  - **Pokédex tab**: Full pokemon grid with encountered/undiscovered display, auto-populated from enemy kills
+  - **Records tab**: Stats overview + achievement viewer with star/check badges
+- **UI Component system** (`src/ui/UIComponents.ts`):
+  - `createButton()` — styled buttons with hover/press animations (replaces `[text]` style)
+  - `createPanel()` — rounded card backgrounds
+  - `createTabBar()` — bottom tab navigation with active indicators
+  - `createCoinBadge()` — coin display with icon
+  - `enableVerticalScroll()` — scrollable container helper
+- **SaveData expanded**:
+  - `upgradeLevels: Record<string, number>` — permanent upgrade progression
+  - `pokedex: string[]` — encountered pokemon tracking
+  - `totalRuns: number` — run counter
+  - `STARTER_COIN_COST` — alternative coin-based starter unlocking
+  - `UPGRADES` — 8 upgrade definitions with scaling costs
+  - `getUpgradeBonus()` / `getUpgradeCost()` — pure utility functions
+- **GameScene integration**:
+  - `createAce()` applies permanent upgrade bonuses (HP, ATK, Speed)
+  - `getEarnedCoins()` applies coin bonus upgrade
+  - Enemy kills recorded to pokedex on death
+  - Pokedex saved on run end
+
+### Architecture
+```
+LobbyScene (tab-based hub)
+  ├── Play: Grid select → detail card → START
+  ├── Shop: 8 permanent upgrades (coin sink)
+  ├── Pokédex: All species grid (enemy kills tracked)
+  └── Records: Stats + achievements
+UIComponents (reusable)
+  ├── createButton (hover/press fx)
+  ├── createPanel (rounded cards)
+  ├── createTabBar (bottom nav)
+  └── createCoinBadge
+```
+
+### Meta Progression Loop
+```
+Run → Earn Coins → Shop Upgrades → Stronger Runs → More Coins
+                  → Unlock Starters (coin OR achievement)
+                  → Fill Pokédex (enemy kills)
+```
+
+---
+
 ## 2026-02-24 (Session 8) — Full Manager Refactoring
 
 ### Changes

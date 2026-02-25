@@ -26,6 +26,7 @@ import {
   checkStarterUnlocks,
   ALL_STARTERS,
   STARTER_SKILLS,
+  getUpgradeBonus,
 } from "../data/SaveData";
 
 import type {
@@ -382,6 +383,11 @@ export class GameScene extends Phaser.Scene {
 
   private handleEnemyDeath(enemy: EnemyData): void {
     const wasBoss = enemy === this.boss;
+    // Record in pokedex
+    if (enemy.pokemonKey && !this.saveData.pokedex) this.saveData.pokedex = [];
+    if (enemy.pokemonKey && !this.saveData.pokedex.includes(enemy.pokemonKey)) {
+      this.saveData.pokedex.push(enemy.pokemonKey);
+    }
     onEnemyDeath(this.ctx, enemy);
     this.syncBack(this.ctx);
     if (wasBoss) this.onBossDefeated();
@@ -511,13 +517,17 @@ export class GameScene extends Phaser.Scene {
 
     const base = GameScene.STARTER_STATS[aceKey] ?? GameScene.STARTER_STATS.pikachu;
     const cycleMult = 1 + (this.cycleNumber - 1) * 0.15;
+    const upgLevels = this.saveData.upgradeLevels ?? {};
+    const hpBonus = 1 + getUpgradeBonus("hp", upgLevels);
+    const atkBonus = 1 + getUpgradeBonus("atk", upgLevels);
+    const spdBonus = 1 + getUpgradeBonus("speed", upgLevels);
     this.ace = {
       sprite,
       pokemonKey: aceKey,
-      hp: Math.floor(base.hp * cycleMult),
-      maxHp: Math.floor(base.hp * cycleMult),
-      atk: Math.floor(base.atk * cycleMult),
-      speed: base.speed + (this.cycleNumber - 1) * 5,
+      hp: Math.floor(base.hp * cycleMult * hpBonus),
+      maxHp: Math.floor(base.hp * cycleMult * hpBonus),
+      atk: Math.floor(base.atk * cycleMult * atkBonus),
+      speed: Math.floor((base.speed + (this.cycleNumber - 1) * 5) * spdBonus),
       attackRange: base.range + (this.cycleNumber - 1) * 5,
       attackCooldown: Math.max(400, base.cooldown - (this.cycleNumber - 1) * 30),
       lastAttackTime: 0,
@@ -1282,7 +1292,9 @@ export class GameScene extends Phaser.Scene {
     const waveCoins = this.waveNumber * 5;
     const cycleCoins = (this.cycleNumber - 1) * 10;
     const levelCoins = this.level * 2;
-    return killCoins + waveCoins + cycleCoins + levelCoins;
+    const base = killCoins + waveCoins + cycleCoins + levelCoins;
+    const coinBonus = 1 + getUpgradeBonus("coinBonus", this.saveData.upgradeLevels ?? {});
+    return Math.floor(base * coinBonus);
   }
 
   private saveHighScore(): void {
@@ -1293,6 +1305,7 @@ export class GameScene extends Phaser.Scene {
     if (this.level > hs.level) { hs.level = this.level; changed = true; }
     if (this.cycleNumber > hs.cycle) { hs.cycle = this.cycleNumber; changed = true; }
     if (this.totalSurvivalTime > (hs.totalTime ?? 0)) { hs.totalTime = Math.floor(this.totalSurvivalTime); changed = true; }
-    if (changed) saveSaveData(this.saveData);
+    // Always save (pokedex may have updated)
+    saveSaveData(this.saveData);
   }
 }

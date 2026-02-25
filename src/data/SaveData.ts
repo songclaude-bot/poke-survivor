@@ -137,12 +137,84 @@ export const STARTER_SKILLS: Record<string, StarterSkill> = {
 // SAVE DATA
 // ================================================================
 
+// ================================================================
+// PERMANENT UPGRADES
+// ================================================================
+
+export interface UpgradeDef {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+  maxLevel: number;
+  baseCost: number;
+  costScale: number;
+  /** Stat effect per level */
+  effect: { stat: string; value: number };
+}
+
+export const UPGRADES: UpgradeDef[] = [
+  { id: "hp",    name: "Max HP",         icon: "❤",  desc: "+5% Max HP per level",     maxLevel: 10, baseCost: 20,  costScale: 1.5, effect: { stat: "hp",          value: 0.05 } },
+  { id: "atk",   name: "Attack",         icon: "⚔",  desc: "+4% Attack per level",     maxLevel: 10, baseCost: 25,  costScale: 1.5, effect: { stat: "atk",         value: 0.04 } },
+  { id: "speed", name: "Speed",          icon: "💨", desc: "+3% Speed per level",      maxLevel: 10, baseCost: 20,  costScale: 1.5, effect: { stat: "speed",       value: 0.03 } },
+  { id: "xp",    name: "XP Gain",        icon: "✨", desc: "+8% XP gain per level",    maxLevel: 8,  baseCost: 30,  costScale: 1.6, effect: { stat: "xpGain",      value: 0.08 } },
+  { id: "crit",  name: "Crit Chance",    icon: "💥", desc: "+3% Crit chance per level", maxLevel: 8,  baseCost: 35,  costScale: 1.6, effect: { stat: "critChance",  value: 0.03 } },
+  { id: "regen", name: "Regeneration",   icon: "💚", desc: "Regen 0.3% HP/5s per level", maxLevel: 5, baseCost: 50, costScale: 1.8, effect: { stat: "regen",       value: 0.003 } },
+  { id: "magnet", name: "Magnet Range",  icon: "🧲", desc: "+10% pickup range per level", maxLevel: 5, baseCost: 30, costScale: 1.5, effect: { stat: "magnetRange", value: 0.10 } },
+  { id: "coins", name: "Coin Bonus",     icon: "🪙", desc: "+10% coins earned per level", maxLevel: 5, baseCost: 40, costScale: 1.7, effect: { stat: "coinBonus",   value: 0.10 } },
+];
+
+export function getUpgradeCost(upgrade: UpgradeDef, currentLevel: number): number {
+  return Math.floor(upgrade.baseCost * Math.pow(upgrade.costScale, currentLevel));
+}
+
+/** Get total stat multiplier from upgrades */
+export function getUpgradeBonus(stat: string, upgradeLevels: Record<string, number>): number {
+  let bonus = 0;
+  for (const upg of UPGRADES) {
+    if (upg.effect.stat === stat) {
+      bonus += upg.effect.value * (upgradeLevels[upg.id] ?? 0);
+    }
+  }
+  return bonus;
+}
+
+// ================================================================
+// STARTER COIN UNLOCK PRICES
+// ================================================================
+
+/** Starters that can also be unlocked with coins (alternative to achievements) */
+export const STARTER_COIN_COST: Record<string, number> = {
+  bulbasaur: 50,
+  gastly: 80,
+  geodude: 100,
+  eevee: 120,
+  chikorita: 60,
+  cyndaquil: 100,
+  totodile: 80,
+  treecko: 150,
+  torchic: 150,
+  mudkip: 100,
+  riolu: 200,
+  machop: 300,
+};
+
+// ================================================================
+// SAVE DATA
+// ================================================================
+
 export interface SaveData {
   highScore: { kills: number; wave: number; level: number; cycle: number; totalTime?: number };
   unlockedAchievements: string[];
   unlockedStarters: string[];
   /** Coins earned from runs */
   coins: number;
+  /** Permanent upgrade levels */
+  upgradeLevels: Record<string, number>;
+  /** Total runs played */
+  totalRuns: number;
+  /** Encountered pokemon keys (for pokedex) */
+  pokedex: string[];
 }
 
 export function loadSaveData(): SaveData {
@@ -151,10 +223,11 @@ export function loadSaveData(): SaveData {
     if (raw) {
       const data = JSON.parse(raw);
       // Migrate: ensure fields exist
-      if (!data.unlockedStarters) {
-        data.unlockedStarters = ["pikachu", "charmander", "squirtle"];
-      }
+      if (!data.unlockedStarters) data.unlockedStarters = ["pikachu", "charmander", "squirtle"];
       if (data.coins === undefined) data.coins = 0;
+      if (!data.upgradeLevels) data.upgradeLevels = {};
+      if (data.totalRuns === undefined) data.totalRuns = 0;
+      if (!data.pokedex) data.pokedex = [];
       return data;
     }
   } catch { /* ignore */ }
@@ -163,6 +236,9 @@ export function loadSaveData(): SaveData {
     unlockedAchievements: [],
     unlockedStarters: ["pikachu", "charmander", "squirtle"],
     coins: 0,
+    upgradeLevels: {},
+    totalRuns: 0,
+    pokedex: [],
   };
 }
 
