@@ -192,14 +192,15 @@ export function showWarning(ctx: GameContext, text: string): void {
   });
 
   const flash = ctx.scene.add
-    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.1)
+    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.15)
     .setDepth(200)
     .setScrollFactor(0);
   ctx.scene.tweens.add({
     targets: flash,
     alpha: 0,
-    duration: 600,
-    repeat: 2,
+    duration: 400,
+    yoyo: true,
+    repeat: 1,
     onComplete: () => flash.destroy(),
   });
 }

@@ -398,9 +398,9 @@ export class LobbyScene extends Phaser.Scene {
     });
 
     if (this.machopUnlocked) {
-      // Already unlocked — show label
-      this.add.text(GAME_WIDTH - 35, GAME_HEIGHT - 95, "💪", {
-        fontSize: "16px",
+      // Already unlocked — show label above sprite
+      this.add.text(GAME_WIDTH - 35, GAME_HEIGHT - 110, "💪", {
+        fontSize: "14px",
       }).setOrigin(0.5).setDepth(6);
       return;
     }
@@ -465,10 +465,18 @@ export class LobbyScene extends Phaser.Scene {
       onComplete: () => txt.destroy(),
     });
 
-    // Muscle emoji
-    this.add.text(GAME_WIDTH - 35, GAME_HEIGHT - 95, "💪", {
-      fontSize: "16px",
-    }).setOrigin(0.5).setDepth(6);
+    // Muscle emoji — animate it popping in above sprite
+    const emojiLabel = this.add.text(GAME_WIDTH - 35, GAME_HEIGHT - 75, "💪", {
+      fontSize: "14px",
+    }).setOrigin(0.5).setDepth(6).setAlpha(0);
+    this.tweens.add({
+      targets: emojiLabel,
+      y: GAME_HEIGHT - 110,
+      alpha: 1,
+      duration: 500,
+      delay: 400,
+      ease: "Back.easeOut",
+    });
 
     // Rebuild card if viewing locked starters
     this.buildCard();
