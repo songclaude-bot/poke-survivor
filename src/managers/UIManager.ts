@@ -191,16 +191,17 @@ export function showWarning(ctx: GameContext, text: string): void {
     onComplete: () => warn.destroy(),
   });
 
+  // Red flash: fade in then fade out, simple and clean
   const flash = ctx.scene.add
-    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.15)
+    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0)
     .setDepth(200)
     .setScrollFactor(0);
-  ctx.scene.tweens.add({
+  ctx.scene.tweens.chain({
     targets: flash,
-    alpha: 0,
-    duration: 400,
-    yoyo: true,
-    repeat: 1,
+    tweens: [
+      { alpha: 0.18, duration: 150 },
+      { alpha: 0, duration: 350 },
+    ],
     onComplete: () => flash.destroy(),
   });
 }

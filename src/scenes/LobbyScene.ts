@@ -714,70 +714,105 @@ export class LobbyScene extends Phaser.Scene {
   private buildPokedexTab(): void {
     const startY = CONTENT_Y + 10;
 
-    // All known pokemon (starters + encountered + enemies)
     const allPokemon = this.collectPokedexEntries();
     const encountered = new Set(this.saveData.pokedex ?? []);
-    // Add starters as encountered
     for (const key of this.saveData.unlockedStarters) encountered.add(key);
+    // Add evolution forms for unlocked starters
+    for (const key of this.saveData.unlockedStarters) {
+      const chain = EVOLUTION_CHAINS[key];
+      if (chain) chain.forEach(stage => encountered.add(stage.spriteKey));
+    }
 
+    // Header (fixed, not scrolled)
     this.contentContainer.add(
-      this.add.text(GAME_WIDTH / 2, startY, `Pokédex — ${encountered.size} Discovered`, {
+      this.add.text(GAME_WIDTH / 2, startY, `Pokédex — ${encountered.size}/${allPokemon.length}`, {
         fontFamily: "monospace", fontSize: "12px", color: "#4ade80",
       }).setOrigin(0.5)
     );
 
-    // Grid
-    const cols = 7;
-    const cellSize = 50;
+    // Scrollable grid container
+    const scrollContainer = this.add.container(0, 0).setDepth(11);
+    this.contentContainer.add(scrollContainer);
+
+    const cols = 8;
+    const cellSize = 44;
     const gridW = cols * cellSize;
     const gridX = (GAME_WIDTH - gridW) / 2;
-    const gridY = startY + 22;
+    const gridTopY = startY + 26;
 
+    // Use simple graphics — NO animated sprites (performance)
     allPokemon.forEach((pkey, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const cx = gridX + col * cellSize + cellSize / 2;
-      const cy = gridY + row * cellSize + cellSize / 2;
+      const cy = gridTopY + row * cellSize + cellSize / 2;
       const seen = encountered.has(pkey);
 
-      // Cell bg
       const cellBg = this.add.graphics();
-      cellBg.fillStyle(seen ? 0x111128 : 0x0a0a12, 0.7);
-      cellBg.fillRoundedRect(cx - cellSize / 2 + 1, cy - cellSize / 2 + 1, cellSize - 2, cellSize - 2, 4);
+      cellBg.fillStyle(seen ? 0x151530 : 0x0a0a12, 0.7);
+      cellBg.fillRoundedRect(cx - cellSize / 2 + 1, cy - cellSize / 2 + 1, cellSize - 2, cellSize - 2, 3);
       if (seen) {
         cellBg.lineStyle(1, 0x333355, 0.4);
-        cellBg.strokeRoundedRect(cx - cellSize / 2 + 1, cy - cellSize / 2 + 1, cellSize - 2, cellSize - 2, 4);
+        cellBg.strokeRoundedRect(cx - cellSize / 2 + 1, cy - cellSize / 2 + 1, cellSize - 2, cellSize - 2, 3);
       }
-      this.contentContainer.add(cellBg);
+      scrollContainer.add(cellBg);
 
       if (seen) {
+        // Static image only (first frame), no animation — performance
         const texKey = pacTexKey(pkey);
         if (this.textures.exists(texKey)) {
-          const spr = this.add.sprite(cx, cy - 4, texKey).setScale(0.7);
-          if (this.anims.exists(`${pkey}-walk-down`)) spr.play(`${pkey}-walk-down`);
-          this.contentContainer.add(spr);
+          const frames = this.textures.get(texKey).getFrameNames();
+          const firstFrame = frames.length > 0 ? frames[0] : undefined;
+          const img = this.add.image(cx, cy - 3, texKey, firstFrame).setScale(0.65);
+          scrollContainer.add(img);
         }
-        this.contentContainer.add(
-          this.add.text(cx, cy + 18, pkey.slice(0, 5), {
-            fontFamily: "monospace", fontSize: "6px", color: "#888",
+        scrollContainer.add(
+          this.add.text(cx, cy + 16, pkey.slice(0, 5), {
+            fontFamily: "monospace", fontSize: "5px", color: "#888",
           }).setOrigin(0.5)
         );
       } else {
-        this.contentContainer.add(
+        scrollContainer.add(
           this.add.text(cx, cy, "?", {
-            fontFamily: "monospace", fontSize: "16px", color: "#222",
+            fontFamily: "monospace", fontSize: "14px", color: "#1a1a2e",
           }).setOrigin(0.5)
         );
       }
     });
 
-    // Total count
-    this.contentContainer.add(
-      this.add.text(GAME_WIDTH / 2, gridY + Math.ceil(allPokemon.length / cols) * cellSize + 8,
-        `${encountered.size}/${allPokemon.length} species`, {
-          fontFamily: "monospace", fontSize: "9px", color: "#666",
-        }).setOrigin(0.5)
-    );
+    // Total rows height
+    const totalRows = Math.ceil(allPokemon.length / cols);
+    const contentH = totalRows * cellSize + 30;
+    const visibleH = CONTENT_H - 30;
+
+    // Scroll mask
+    if (contentH > visibleH) {
+      const maskShape = this.make.graphics({});
+      maskShape.fillStyle(0xffffff);
+      maskShape.fillRect(0, gridTopY - 4, GAME_WIDTH, visibleH);
+      scrollContainer.setMask(maskShape.createGeometryMask());
+
+      // Drag to scroll
+      let dragStartY = 0;
+      let dragStartContY = 0;
+      const minY = -(contentH - visibleH);
+      const maxY = 0;
+
+      const scrollZone = this.add.zone(GAME_WIDTH / 2, gridTopY + visibleH / 2, GAME_WIDTH, visibleH)
+        .setInteractive().setDepth(12);
+      this.contentContainer.add(scrollZone);
+
+      scrollZone.on("pointerdown", (p: Phaser.Input.Pointer) => {
+        dragStartY = p.y;
+        dragStartContY = scrollContainer.y;
+      });
+
+      scrollZone.on("pointermove", (p: Phaser.Input.Pointer) => {
+        if (!p.isDown) return;
+        const dy = p.y - dragStartY;
+        scrollContainer.y = Phaser.Math.Clamp(dragStartContY + dy, minY, maxY);
+      });
+    }
   }
 
   private collectPokedexEntries(): string[] {
