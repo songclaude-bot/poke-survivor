@@ -144,7 +144,8 @@ export class LobbyScene extends Phaser.Scene {
 
   private switchTab(idx: number): void {
     this.activeTab = idx;
-    // Rebuild tab bar
+    // Destroy old tab bar and all its children
+    this.tabBar.removeAll(true);
     this.tabBar.destroy();
     this.tabBar = createTabBar({
       scene: this,
@@ -158,6 +159,7 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private buildTab(idx: number): void {
+    // Destroy all children properly — this removes panels, buttons, sprites etc.
     this.contentContainer.removeAll(true);
     switch (idx) {
       case 0: this.buildPlayTab(); break;
@@ -165,6 +167,16 @@ export class LobbyScene extends Phaser.Scene {
       case 2: this.buildPokedexTab(); break;
       case 3: this.buildRecordsTab(); break;
     }
+  }
+
+  /** Create a panel AND add it to contentContainer so it gets cleaned up on tab switch */
+  private addPanel(x: number, y: number, w: number, h: number, borderColor?: number, fillColor?: number): void {
+    const panel = createPanel({
+      scene: this, x, y, width: w, height: h,
+      borderColor: borderColor ?? 0x333355,
+      fillColor: fillColor ?? 0x0e0e1a,
+    });
+    this.contentContainer.add(panel);
   }
 
   // ════════════════════════════════════════
@@ -273,12 +285,9 @@ export class LobbyScene extends Phaser.Scene {
     const cardH = 220;
     const cardX = 15;
 
-    createPanel({
-      scene: this, x: cardX, y, width: cardW, height: cardH,
-      borderColor: unlocked
-        ? Phaser.Display.Color.HexStringToColor(starter.color).color
-        : 0x333344,
-    });
+    this.addPanel(cardX, y, cardW, cardH,
+      unlocked ? Phaser.Display.Color.HexStringToColor(starter.color).color : 0x333344,
+    );
 
     if (!unlocked) {
       // Locked view
@@ -621,10 +630,9 @@ export class LobbyScene extends Phaser.Scene {
       const canAfford = !isMaxed && (this.saveData.coins ?? 0) >= cost;
 
       // Panel
-      createPanel({
-        scene: this, x: ix, y: iy, width: itemW, height: itemH,
-        borderColor: isMaxed ? 0x4ade80 : canAfford ? 0x667eea : 0x222233,
-      });
+      this.addPanel(ix, iy, itemW, itemH,
+        isMaxed ? 0x4ade80 : canAfford ? 0x667eea : 0x222233,
+      );
 
       // Icon + Name
       this.contentContainer.add(
@@ -821,9 +829,7 @@ export class LobbyScene extends Phaser.Scene {
     ];
 
     const statsPanel = startY + 18;
-    createPanel({
-      scene: this, x: 15, y: statsPanel, width: GAME_WIDTH - 30, height: 110,
-    });
+    this.addPanel(15, statsPanel, GAME_WIDTH - 30, 110);
 
     statsLines.forEach((line, i) => {
       this.contentContainer.add(
@@ -851,11 +857,10 @@ export class LobbyScene extends Phaser.Scene {
 
       const done = unlocked.has(ach.id);
 
-      createPanel({
-        scene: this, x: ix, y: iy, width: itemW, height: itemH,
-        borderColor: done ? 0xa78bfa : 0x1a1a2e,
-        fillColor: done ? 0x151528 : 0x0c0c16,
-      });
+      this.addPanel(ix, iy, itemW, itemH,
+        done ? 0xa78bfa : 0x1a1a2e,
+        done ? 0x151528 : 0x0c0c16,
+      );
 
       // Icon
       this.contentContainer.add(
