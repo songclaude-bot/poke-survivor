@@ -1,5 +1,68 @@
 # Poke Survivor - Development Log
 
+## 2026-02-26 (Session 11) — Critical Fixes: syncBack, Buttons, XP, Attack Freeze, Photosensitivity
+
+### Changes
+- **syncBack ROOT CAUSE FIXED (commit bb6e343)**: `update()` captured `const c = this.ctx` BEFORE scene methods ran, then `syncBack(c)` overwrote `this.waveNumber` back to 0 from stale snapshot — causing `showWarning("Wave 1")` to fire EVERY FRAME (60× red flash rectangles/sec = opaque red screen). Fix: moved ctx capture AFTER scene methods; removed wave/boss/spawn fields from syncBack.
+- **Buttons unclickable FIXED (commit eecd436)**: Container+Zone with `scrollFactor(0)` — Phaser hit-testing uses world coords that don't match when camera at (1500,1500). Fix: position containers at `(scrollX, scrollY)` in world space, remove scrollFactor(0).
+- **XP not registering FIXED (commit eecd436)**: `handleCollectXpGem` called `this.ctx` twice — each creates NEW object, so xp++ on first ctx lost when syncing from second. Fix: capture ctx ONCE.
+- **Machop attack freeze FIXED (commit b3e7eb2)**: `sprite.once("animationcomplete")` unreliable in Phaser 3.90 — never fires, leaving sprite frozen. Replaced with `setTimeout` using calculated frame count / frame rate. Also fixed `playHitEffect` and `playMeleeEffect` in AttackEffects.ts.
+- **Photosensitivity safety overhaul (commit b3e7eb2)**: All flash/shake effects drastically reduced:
+  - `cameras.main.flash()` RGB values reduced ~70% across 7 call sites
+  - `cameras.main.shake()` removed for elite/streak kills, reduced for boss
+  - Danger vignette: slower pulse (0.005→0.002), lower opacity (0.2→0.06), thinner border
+  - Warning flash rectangle alpha 0.15→0.06
+  - Boss-defeat overlay alpha 0.2→0.08
+
+### Commits
+| Commit | Description |
+|--------|-------------|
+| `bb6e343` | Fix root cause: syncBack overwrote wave/boss state every frame |
+| `eecd436` | Fix buttons unclickable + XP not registering |
+| `b3e7eb2` | Fix Machop attack freeze + reduce all flash/shake effects |
+
+### Critical Architecture: this.ctx creates NEW object every call
+- `this.ctx` is a getter that creates a new snapshot each invocation
+- Calling `this.ctx` twice = two separate objects; mutations on one are invisible to the other
+- ALWAYS capture `const c = this.ctx` ONCE, operate on it, then `syncBack(c)` from the SAME reference
+
+---
+
+## 2026-02-26 (Session 10) — Critical Bug Fixes & UI Polish
+
+### Changes
+- **Wave 1 stuck text ROOT CAUSE FIXED**: Tutorial overlay's `setInteractive()` + `setScrollFactor(0)` combo is broken in Phaser 3.90. When camera follows the ace at world (1500,1500), hit-testing on scrollFactor(0) objects fails because Phaser transforms pointer to world coords, which don't intersect the overlay's world position. Fix: `this.input.once("pointerdown")` instead of `overlay.setInteractive()` + `overlay.once("pointerdown")`.
+- **Phaser tween onComplete completely removed**: All `tweens.add`/`tweens.chain` onComplete callbacks replaced with `setTimeout`. This fixed:
+  - `showWarning` text never disappearing (UIManager.ts)
+  - Enemy spawn pop-in (scale 0 → 1) never completing (EnemyManager.ts)
+  - `createButton` onClick never firing through tween press animation (UIComponents.ts)
+- **Blurry text fixed**: `pixelArt: false`, `antialias: true`, `roundPixels: true` in Phaser config
+- **Stat bars layout**: 2×2 grid layout replacing vertical list to avoid overlapping evolution names
+- **Pokédex sprites fixed**: New `findIdleFrame()` method finds Walk/Idle frame instead of alphabetically-first Attack frame. 5 columns, 68px cells.
+- **Shop icon clipping fixed**: Icons shifted down, proper padding
+- **All lobby tabs**: Top padding increased (8-10px → 18px) from header
+- **Pause/death buttons styled**: Replaced `[text]` buttons with `createButton()`/`createPanel()`
+- **cycleNumber reset fix**: `data?.cycleNumber ?? 1` instead of conditional assignment (fixes carry-over from previous run)
+
+### Commits
+| Commit | Description |
+|--------|-------------|
+| `2e6dba6` | Fix blurry text: pixelArt:false + antialias:true + roundPixels:true |
+| `842c0ec` | Fix stat bars overlapping evolution names (2×2 layout) |
+| `a1fbfd0` | Fix Pokédex wrong sprites (Walk/Idle frame finder, 5 cols) |
+| `c9edf88` | Fix Shop icon clipping + top padding all tabs |
+| `a29514a` | Replace pause/death [text] buttons with styled UI |
+| `fb42f6e` | showWarning: setTimeout instead of Phaser timers |
+| `8a2f154` | Tutorial overlay hit-test fix (root cause) + cycleNumber reset |
+| `2b8b25d` | Fix enemy spawn, button clicks, and card layout |
+
+### Critical Phaser 3.90 Lessons
+1. **scrollFactor(0) + setInteractive() = BROKEN** when camera is offset from world origin. Always use `scene.input.once()` for fixed-UI click handling.
+2. **tweens.add onComplete is UNRELIABLE** — use `setTimeout` for guaranteed callbacks.
+3. **Scene instances are reused** — `scene.start()` does NOT create new instance. Reset all state in `init()`.
+
+---
+
 ## 2026-02-25 (Session 9) — Lobby Overhaul & Meta Progression
 
 ### Changes
