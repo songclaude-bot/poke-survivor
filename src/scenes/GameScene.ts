@@ -394,14 +394,18 @@ export class GameScene extends Phaser.Scene {
     if (enemy.pokemonKey && !this.saveData.pokedex.includes(enemy.pokemonKey)) {
       this.saveData.pokedex.push(enemy.pokemonKey);
     }
-    onEnemyDeath(this.ctx, enemy);
-    this.syncBack(this.ctx);
+    // CRITICAL: capture ctx ONCE — using this.ctx twice creates two separate
+    // objects, so changes on the first (kills++, xp) are lost when syncing from the second.
+    const c = this.ctx;
+    onEnemyDeath(c, enemy);
+    this.syncBack(c);
     if (wasBoss) this.onBossDefeated();
   }
 
   private handleDamageAce(amount: number): void {
-    damageAce(this.ctx, amount);
-    this.syncBack(this.ctx);
+    const c = this.ctx;
+    damageAce(c, amount);
+    this.syncBack(c);
     if (this.ace.hp <= 0 && !this.isPaused) {
       this.ace.hp = 0;
       this.onAceDeath();
@@ -409,8 +413,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleCollectXpGem(gem: XpGem): void {
-    collectXpGem(this.ctx, gem);
-    this.syncBack(this.ctx);
+    const c = this.ctx;
+    collectXpGem(c, gem);
+    this.syncBack(c);
   }
 
   // ================================================================
@@ -612,8 +617,10 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(101).setScrollFactor(0).setInteractive({ useHandCursor: true });
     pauseBtn.on("pointerdown", () => this.togglePause());
 
-    this.pauseContainer = this.add.container(0, 0).setDepth(600).setScrollFactor(0).setVisible(false);
-    this.levelUpContainer = this.add.container(0, 0).setDepth(500).setScrollFactor(0).setVisible(false);
+    // NO scrollFactor(0) — containers are positioned at camera origin when shown,
+    // so children's interactive zones work correctly with Phaser's hit testing.
+    this.pauseContainer = this.add.container(0, 0).setDepth(600).setVisible(false);
+    this.levelUpContainer = this.add.container(0, 0).setDepth(500).setVisible(false);
   }
 
   private createJoystick(): void {
@@ -879,48 +886,45 @@ export class GameScene extends Phaser.Scene {
     this.manualPause = true;
     this.isPaused = true;
     this.pauseContainer.removeAll(true);
+    // Position container at camera origin — children use screen-relative coords
+    // but are in world space, so interactive hit-testing works correctly.
+    this.pauseContainer.setPosition(this.cameras.main.scrollX, this.cameras.main.scrollY);
     this.pauseContainer.setVisible(true);
 
-    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8).setScrollFactor(0);
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8);
     this.pauseContainer.add(overlay);
 
-    // Panel background
     const panelG = createPanel({
       scene: this, x: GAME_WIDTH / 2 - 130, y: GAME_HEIGHT / 2 - 120,
       width: 260, height: 280, fillColor: 0x0e0e1a, borderColor: 0x667eea, depth: 500,
     });
-    panelG.setScrollFactor(0);
     this.pauseContainer.add(panelG);
 
     const title = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 90, "PAUSED", {
       fontFamily: "monospace", fontSize: "28px", color: "#667eea",
       stroke: "#000", strokeThickness: 4, fontStyle: "bold",
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
+    }).setOrigin(0.5).setDepth(501);
     this.pauseContainer.add(title);
 
-    // Resume button
     const resumeBtn = createButton({
       scene: this, x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 - 20,
       width: 200, height: 44, label: "RESUME", fontSize: "16px",
       color: 0x1a2e1a, textColor: "#4ade80", borderColor: 0x4ade80, depth: 501,
       onClick: () => this.resumeGame(),
     });
-    resumeBtn.setScrollFactor(0);
     this.pauseContainer.add(resumeBtn);
 
-    // Volume controls
     const volLabel = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40, "Volume", {
       fontFamily: "monospace", fontSize: "11px", color: "#888", fontStyle: "bold",
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
+    }).setOrigin(0.5).setDepth(501);
     this.pauseContainer.add(volLabel);
 
     const volDownBtn = createButton({
       scene: this, x: GAME_WIDTH / 2 - 55, y: GAME_HEIGHT / 2 + 70,
-      width: 70, height: 34, label: "–", fontSize: "18px",
+      width: 70, height: 34, label: "\u2013", fontSize: "18px",
       color: 0x1a1a2e, textColor: "#fbbf24", borderColor: 0xfbbf24, depth: 501,
       onClick: () => sfx.adjustVolume(-0.1),
     });
-    volDownBtn.setScrollFactor(0);
     this.pauseContainer.add(volDownBtn);
 
     const volUpBtn = createButton({
@@ -929,10 +933,8 @@ export class GameScene extends Phaser.Scene {
       color: 0x1a1a2e, textColor: "#fbbf24", borderColor: 0xfbbf24, depth: 501,
       onClick: () => sfx.adjustVolume(0.1),
     });
-    volUpBtn.setScrollFactor(0);
     this.pauseContainer.add(volUpBtn);
 
-    // Main menu button
     const menuBtn = createButton({
       scene: this, x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 125,
       width: 200, height: 40, label: "MAIN MENU", fontSize: "14px",
@@ -942,7 +944,6 @@ export class GameScene extends Phaser.Scene {
         this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
       },
     });
-    menuBtn.setScrollFactor(0);
     this.pauseContainer.add(menuBtn);
   }
 
@@ -963,20 +964,22 @@ export class GameScene extends Phaser.Scene {
     sfx.playDeath();
     this.saveHighScore();
 
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75)
-      .setDepth(300).setScrollFactor(0);
+    // Position in world space at camera origin — no scrollFactor(0) so buttons work
+    const sx = this.cameras.main.scrollX;
+    const sy = this.cameras.main.scrollY;
 
-    // Panel
-    const panelG = createPanel({
-      scene: this, x: GAME_WIDTH / 2 - 150, y: GAME_HEIGHT / 2 - 100,
+    this.add.rectangle(sx + GAME_WIDTH / 2, sy + GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75)
+      .setDepth(300);
+
+    createPanel({
+      scene: this, x: sx + GAME_WIDTH / 2 - 150, y: sy + GAME_HEIGHT / 2 - 100,
       width: 300, height: 310, fillColor: 0x0e0e1a, borderColor: 0xf43f5e, depth: 301,
     });
-    panelG.setScrollFactor(0);
 
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 70, "DEFEATED", {
+    this.add.text(sx + GAME_WIDTH / 2, sy + GAME_HEIGHT / 2 - 70, "DEFEATED", {
       fontFamily: "monospace", fontSize: "28px", color: "#f43f5e",
       stroke: "#000", strokeThickness: 4, fontStyle: "bold",
-    }).setOrigin(0.5).setDepth(302).setScrollFactor(0);
+    }).setOrigin(0.5).setDepth(302);
 
     const evoName = EVOLUTION_CHAINS[this.ace.pokemonKey]?.[this.aceEvoStage]?.name ?? this.ace.pokemonKey;
     const totalTimeStr = formatTime(this.totalSurvivalTime);
@@ -990,34 +993,36 @@ export class GameScene extends Phaser.Scene {
       diffLabel ? `Difficulty: ${diffLabel}` : "",
       `Coins: +${coinsEarned}`,
     ].filter(Boolean);
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 35, statsLines.join("\n"), {
+    this.add.text(sx + GAME_WIDTH / 2, sy + GAME_HEIGHT / 2 - 35, statsLines.join("\n"), {
       fontFamily: "monospace", fontSize: "12px", color: "#ccc",
       align: "center", lineSpacing: 4,
-    }).setOrigin(0.5, 0).setDepth(302).setScrollFactor(0);
+    }).setOrigin(0.5, 0).setDepth(302);
 
     const hs = this.saveData.highScore;
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 110,
+    this.add.text(sx + GAME_WIDTH / 2, sy + GAME_HEIGHT / 2 + 110,
       `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
       fontFamily: "monospace", fontSize: "10px", color: "#fbbf24",
       align: "center", fontStyle: "bold",
-    }).setOrigin(0.5).setDepth(302).setScrollFactor(0);
+    }).setOrigin(0.5).setDepth(302);
 
-    // Retry button
     const retryBtn = createButton({
-      scene: this, x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 155,
+      scene: this, x: sx + GAME_WIDTH / 2, y: sy + GAME_HEIGHT / 2 + 155,
       width: 220, height: 44, label: "RETRY", fontSize: "16px",
       color: 0x1a1a2e, textColor: "#667eea", borderColor: 0x667eea, depth: 302,
       onClick: () => {
         this.scene.start("LobbyScene", { coins: coinsEarned });
       },
     });
-    retryBtn.setScrollFactor(0);
 
-    // Pulse animation on retry button
-    this.tweens.add({
-      targets: retryBtn, scaleX: 1.03, scaleY: 1.03,
-      duration: 800, yoyo: true, repeat: -1, ease: "Sine.easeInOut",
-    });
+    // Pulse via setTimeout loop (no tween onComplete dependency)
+    let pulse = true;
+    const doPulse = () => {
+      if (!retryBtn.scene) return;
+      pulse = !pulse;
+      retryBtn.setScale(pulse ? 1.03 : 1);
+      setTimeout(doPulse, 800);
+    };
+    setTimeout(doPulse, 800);
   }
 
   // ================================================================
@@ -1126,14 +1131,16 @@ export class GameScene extends Phaser.Scene {
     this.joyBase.setAlpha(0.3);
 
     this.levelUpContainer.removeAll(true);
+    // Position at camera origin — children in screen-relative world coords
+    this.levelUpContainer.setPosition(this.cameras.main.scrollX, this.cameras.main.scrollY);
     this.levelUpContainer.setVisible(true);
 
-    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setScrollFactor(0);
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7);
     this.levelUpContainer.add(overlay);
 
     const title = this.add.text(GAME_WIDTH / 2, 60, `LEVEL ${this.level}!`, {
       fontFamily: "monospace", fontSize: "22px", color: "#fbbf24", stroke: "#000", strokeThickness: 3,
-    }).setOrigin(0.5).setScrollFactor(0);
+    }).setOrigin(0.5);
     this.levelUpContainer.add(title);
 
     type Choice = { label: string; desc: string; action: () => void; color: number; portrait?: string };
@@ -1258,24 +1265,24 @@ export class GameScene extends Phaser.Scene {
       const textOffsetX = hasPortrait ? 30 : 0;
 
       const card = this.add.rectangle(GAME_WIDTH / 2, cy + cardH / 2, GAME_WIDTH - 40, cardH, 0x111118, 0.95)
-        .setStrokeStyle(2, choice.color, 0.8).setScrollFactor(0).setInteractive({ useHandCursor: true });
+        .setStrokeStyle(2, choice.color, 0.8).setInteractive({ useHandCursor: true });
       this.levelUpContainer.add(card);
 
       if (hasPortrait) {
         const portrait = this.add.image(50, cy + cardH / 2, `portrait-${choice.portrait!}`)
-          .setDisplaySize(48, 48).setScrollFactor(0).setDepth(501);
+          .setDisplaySize(48, 48).setDepth(501);
         this.levelUpContainer.add(portrait);
       }
 
       const lbl = this.add.text(GAME_WIDTH / 2 + textOffsetX, cy + 25, choice.label, {
         fontFamily: "monospace", fontSize: "18px",
         color: `#${choice.color.toString(16).padStart(6, "0")}`,
-      }).setOrigin(0.5).setScrollFactor(0);
+      }).setOrigin(0.5);
       this.levelUpContainer.add(lbl);
 
       const desc = this.add.text(GAME_WIDTH / 2 + textOffsetX, cy + 55, choice.desc, {
         fontFamily: "monospace", fontSize: "11px", color: "#888",
-      }).setOrigin(0.5).setScrollFactor(0);
+      }).setOrigin(0.5);
       this.levelUpContainer.add(desc);
 
       card.on("pointerdown", () => { choice.action(); this.closeLevelUpSelection(); });
@@ -1287,7 +1294,7 @@ export class GameScene extends Phaser.Scene {
   private closeLevelUpSelection(): void {
     this.levelUpContainer.setVisible(false);
     this.levelUpContainer.removeAll(true);
-    this.time.delayedCall(100, () => { this.isPaused = false; });
+    setTimeout(() => { this.isPaused = false; }, 100);
   }
 
   // ================================================================
