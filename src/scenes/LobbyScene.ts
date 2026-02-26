@@ -731,13 +731,13 @@ export class LobbyScene extends Phaser.Scene {
     const scrollContainer = this.add.container(0, 0).setDepth(11);
     this.contentContainer.add(scrollContainer);
 
-    const cols = 8;
-    const cellSize = 44;
+    const cols = 5;
+    const cellSize = 68;
     const gridW = cols * cellSize;
     const gridX = (GAME_WIDTH - gridW) / 2;
     const gridTopY = startY + 26;
 
-    // Use simple graphics — NO animated sprites (performance)
+    // Use static images — NO animated sprites (performance)
     allPokemon.forEach((pkey, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
@@ -747,31 +747,30 @@ export class LobbyScene extends Phaser.Scene {
 
       const cellBg = this.add.graphics();
       cellBg.fillStyle(seen ? 0x151530 : 0x0a0a12, 0.7);
-      cellBg.fillRoundedRect(cx - cellSize / 2 + 1, cy - cellSize / 2 + 1, cellSize - 2, cellSize - 2, 3);
+      cellBg.fillRoundedRect(cx - cellSize / 2 + 2, cy - cellSize / 2 + 2, cellSize - 4, cellSize - 4, 4);
       if (seen) {
         cellBg.lineStyle(1, 0x333355, 0.4);
-        cellBg.strokeRoundedRect(cx - cellSize / 2 + 1, cy - cellSize / 2 + 1, cellSize - 2, cellSize - 2, 3);
+        cellBg.strokeRoundedRect(cx - cellSize / 2 + 2, cy - cellSize / 2 + 2, cellSize - 4, cellSize - 4, 4);
       }
       scrollContainer.add(cellBg);
 
       if (seen) {
-        // Static image only (first frame), no animation — performance
+        // Find idle/walk frame instead of alphabetically first frame
         const texKey = pacTexKey(pkey);
         if (this.textures.exists(texKey)) {
-          const frames = this.textures.get(texKey).getFrameNames();
-          const firstFrame = frames.length > 0 ? frames[0] : undefined;
-          const img = this.add.image(cx, cy - 3, texKey, firstFrame).setScale(0.65);
+          const frame = this.findIdleFrame(texKey);
+          const img = this.add.image(cx, cy - 6, texKey, frame).setScale(0.8);
           scrollContainer.add(img);
         }
         scrollContainer.add(
-          this.add.text(cx, cy + 16, pkey.slice(0, 5), {
-            fontFamily: "monospace", fontSize: "5px", color: "#888",
+          this.add.text(cx, cy + 22, pkey.slice(0, 7), {
+            fontFamily: "monospace", fontSize: "7px", color: "#aaa",
           }).setOrigin(0.5)
         );
       } else {
         scrollContainer.add(
           this.add.text(cx, cy, "?", {
-            fontFamily: "monospace", fontSize: "14px", color: "#1a1a2e",
+            fontFamily: "monospace", fontSize: "18px", color: "#1a1a2e",
           }).setOrigin(0.5)
         );
       }
@@ -810,6 +809,21 @@ export class LobbyScene extends Phaser.Scene {
         scrollContainer.y = Phaser.Math.Clamp(dragStartContY + dy, minY, maxY);
       });
     }
+  }
+
+  /** Find a Walk or Idle frame facing down (direction 0), first frame */
+  private findIdleFrame(texKey: string): string | undefined {
+    const frames = this.textures.get(texKey).getFrameNames();
+    if (frames.length === 0) return undefined;
+    // Prefer Walk/Anim/0/0000, then Idle/Anim/0/0000, then any /0/0000
+    const walkFrame = frames.find(f => /Walk\/Anim\/0\/0000/.test(f));
+    if (walkFrame) return walkFrame;
+    const idleFrame = frames.find(f => /Idle\/Anim\/0\/0000/.test(f));
+    if (idleFrame) return idleFrame;
+    // Fallback: any direction-0 first frame
+    const anyDir0 = frames.find(f => /\/0\/0000/.test(f));
+    if (anyDir0) return anyDir0;
+    return frames[0];
   }
 
   private collectPokedexEntries(): string[] {
