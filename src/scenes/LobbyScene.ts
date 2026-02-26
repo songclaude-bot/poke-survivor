@@ -184,7 +184,7 @@ export class LobbyScene extends Phaser.Scene {
   // ════════════════════════════════════════
 
   private buildPlayTab(): void {
-    const startY = CONTENT_Y + 8;
+    const startY = CONTENT_Y + 18;
 
     // Section label
     this.contentContainer.add(
@@ -599,7 +599,7 @@ export class LobbyScene extends Phaser.Scene {
   // ════════════════════════════════════════
 
   private buildShopTab(): void {
-    const startY = CONTENT_Y + 10;
+    const startY = CONTENT_Y + 18;
 
     this.contentContainer.add(
       this.add.text(GAME_WIDTH / 2, startY, "Permanent Upgrades", {
@@ -633,10 +633,10 @@ export class LobbyScene extends Phaser.Scene {
 
       // Icon + Name
       this.contentContainer.add(
-        this.add.text(ix + 10, iy + 12, upg.icon, { fontSize: "18px" }).setOrigin(0, 0.5)
+        this.add.text(ix + 10, iy + 18, upg.icon, { fontSize: "16px" }).setOrigin(0, 0.5)
       );
       this.contentContainer.add(
-        this.add.text(ix + 32, iy + 8, upg.name, {
+        this.add.text(ix + 32, iy + 12, upg.name, {
           fontFamily: "monospace", fontSize: "10px", color: "#fff",
         })
       );
@@ -644,7 +644,7 @@ export class LobbyScene extends Phaser.Scene {
       // Level progress
       const lvText = isMaxed ? "MAX" : `Lv.${currentLv}/${upg.maxLevel}`;
       this.contentContainer.add(
-        this.add.text(ix + 32, iy + 22, lvText, {
+        this.add.text(ix + 32, iy + 26, lvText, {
           fontFamily: "monospace", fontSize: "8px",
           color: isMaxed ? "#4ade80" : "#888",
         })
@@ -652,7 +652,7 @@ export class LobbyScene extends Phaser.Scene {
 
       // Level bar
       const barX = ix + 8;
-      const barY = iy + 38;
+      const barY = iy + 42;
       const barW = itemW - 16;
       const barH = 5;
       const barBg = this.add.graphics();
@@ -670,7 +670,7 @@ export class LobbyScene extends Phaser.Scene {
 
       // Description
       this.contentContainer.add(
-        this.add.text(ix + 8, iy + 48, upg.desc, {
+        this.add.text(ix + 8, iy + 52, upg.desc, {
           fontFamily: "monospace", fontSize: "7px", color: "#777",
           wordWrap: { width: itemW - 16 },
         })
@@ -709,7 +709,7 @@ export class LobbyScene extends Phaser.Scene {
   // ════════════════════════════════════════
 
   private buildPokedexTab(): void {
-    const startY = CONTENT_Y + 10;
+    const startY = CONTENT_Y + 18;
 
     const allPokemon = this.collectPokedexEntries();
     const encountered = new Set(this.saveData.pokedex ?? []);
@@ -853,7 +853,7 @@ export class LobbyScene extends Phaser.Scene {
   // ════════════════════════════════════════
 
   private buildRecordsTab(): void {
-    const startY = CONTENT_Y + 10;
+    const startY = CONTENT_Y + 18;
     const unlocked = new Set(this.saveData.unlockedAchievements ?? []);
 
     // Stats section
