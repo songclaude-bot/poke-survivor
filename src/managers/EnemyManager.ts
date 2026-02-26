@@ -255,13 +255,9 @@ export function spawnEnemy(ctx: GameContext, elapsed: number): void {
     sprite.setTint(0xff8888);
   }
 
-  sprite.setScale(0);
-  ctx.scene.tweens.add({
-    targets: sprite,
-    scaleX: 1, scaleY: 1,
-    duration: 250,
-    ease: "Back.easeOut",
-  });
+  // Pop-in via setTimeout — NO tweens (onComplete unreliable in Phaser 3.90)
+  sprite.setScale(0.3);
+  setTimeout(() => { if (sprite.active) sprite.setScale(1); }, 150);
 
   const hpBarGfx = ctx.scene.add.graphics().setDepth(6);
   const behavior = getBehavior(pokemonKey);
@@ -273,14 +269,8 @@ export function spawnEnemy(ctx: GameContext, elapsed: number): void {
 
   if (isElite) {
     sprite.setTint(0xffaa00);
-    ctx.scene.tweens.killTweensOf(sprite);
-    sprite.setScale(0);
-    ctx.scene.tweens.add({
-      targets: sprite,
-      scaleX: 1.4, scaleY: 1.4,
-      duration: 300,
-      ease: "Back.easeOut",
-    });
+    sprite.setScale(0.5);
+    setTimeout(() => { if (sprite.active) sprite.setScale(1.4); }, 200);
   }
 
   const enemy: EnemyData = {
@@ -317,8 +307,8 @@ export function spawnFormationEnemy(ctx: GameContext, x: number, y: number, elap
     sprite.play(`${pokemonKey}-walk-down`);
     sprite.setTint(0xff8888);
   }
-  sprite.setScale(0);
-  ctx.scene.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 200, ease: "Back.easeOut" });
+  sprite.setScale(0.3);
+  setTimeout(() => { if (sprite.active) sprite.setScale(1); }, 120);
 
   const hpBarGfx = ctx.scene.add.graphics().setDepth(6);
   const baseHp = Math.floor(15 * hpMult);
@@ -354,13 +344,8 @@ export function spawnMiniBoss(ctx: GameContext, elapsed: number): void {
 
   if (usePmd) sprite.play(`${pokemonKey}-walk-down`);
   sprite.setTint(0xff00ff);
-  sprite.setScale(0);
-  ctx.scene.tweens.add({
-    targets: sprite,
-    scaleX: 1.7, scaleY: 1.7,
-    duration: 400,
-    ease: "Back.easeOut",
-  });
+  sprite.setScale(0.5);
+  setTimeout(() => { if (sprite.active) sprite.setScale(1.7); }, 250);
 
   const hpBarGfx = ctx.scene.add.graphics().setDepth(8);
   const miniHp = Math.round(60 * (1 + elapsed * 0.015) * cycleMult);

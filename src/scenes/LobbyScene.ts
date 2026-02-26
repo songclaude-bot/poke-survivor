@@ -282,7 +282,7 @@ export class LobbyScene extends Phaser.Scene {
 
     // Card panel
     const cardW = GAME_WIDTH - 30;
-    const cardH = 230;
+    const cardH = 246;
     const cardX = 15;
 
     this.addPanel(cardX, y, cardW, cardH,
@@ -439,7 +439,7 @@ export class LobbyScene extends Phaser.Scene {
     const barW = 110;
     const barH = 6;
     const statColW = (cardW - 30) / 2;
-    const statStartY = y + 168;
+    const statStartY = y + 182;
 
     stats.forEach((stat, i) => {
       const col = i % 2;

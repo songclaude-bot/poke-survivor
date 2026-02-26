@@ -77,15 +77,14 @@ export function createButton(cfg: ButtonConfig): Phaser.GameObjects.Container {
     txt.setColor(textColor);
   });
 
-  // Press effect
+  // Press effect — call onClick directly, NOT via tween onComplete
+  // (Phaser 3.90 tween onComplete is unreliable)
   hitZone.on("pointerdown", () => {
-    scene.tweens.add({
-      targets: container,
-      scaleX: 0.95, scaleY: 0.95,
-      duration: 50,
-      yoyo: true,
-      onComplete: onClick,
-    });
+    container.setScale(0.95);
+    setTimeout(() => {
+      container.setScale(1);
+    }, 80);
+    onClick();
   });
 
   return container;
