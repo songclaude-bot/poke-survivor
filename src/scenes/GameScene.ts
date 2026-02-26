@@ -272,7 +272,12 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  /** Sync mutable context fields back into scene state */
+  /**
+   * Sync mutable context fields back into scene state.
+   * IMPORTANT: Only sync fields that manager functions (not scene methods) may modify.
+   * Wave/boss/spawn fields are managed by scene methods (updateTimer, updateEnemySpawning)
+   * and must NOT be overwritten here.
+   */
   private syncBack(c: GameContext): void {
     this.xp = c.xp;
     this.level = c.level;
@@ -280,17 +285,11 @@ export class GameScene extends Phaser.Scene {
     this.kills = c.kills;
     this.killStreak = c.killStreak;
     this.lastKillTime = c.lastKillTime;
-    this.spawnTimer = c.spawnTimer;
     this.isPaused = c.isPaused;
     this.pendingLevelUp = c.pendingLevelUp;
-    this.waveNumber = c.waveNumber;
-    this.waveTimer = c.waveTimer;
-    this.waveRestTimer = c.waveRestTimer;
-    this.waveEnemiesRemaining = c.waveEnemiesRemaining;
-    this.inWaveRest = c.inWaveRest;
-    this.boss = c.boss;
-    this.bossSpawned = c.bossSpawned;
-    this.bossWarningShown = c.bossWarningShown;
+    // Wave/boss/spawn fields are NOT synced — they are managed directly
+    // by scene methods (updateTimer, updateEnemySpawning) and must not
+    // be overwritten with stale snapshot values.
     this.aceEvoStage = c.aceEvoStage;
     this.critChance = c.critChance;
     this.lifestealRate = c.lifestealRate;
@@ -345,11 +344,14 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.isPaused) return;
     const dt = delta / 1000;
-    const c = this.ctx;
 
+    // Scene methods modify this.* directly — run BEFORE capturing ctx
     this.updateTimer(dt);
     this.updateAceMovement(dt);
     this.updateEnemySpawning(dt);
+
+    // Capture context AFTER scene methods so snapshot reflects current state
+    const c = this.ctx;
 
     updateEnemies(c, dt);
     updateAceAutoAttack(c);
@@ -719,8 +721,9 @@ export class GameScene extends Phaser.Scene {
 
     if (elapsed >= 240 && !this.bossSpawned) {
       this.bossSpawned = true;
-      spawnBoss(this.ctx);
-      this.syncBack(this.ctx);
+      const bossCtx = this.ctx;
+      spawnBoss(bossCtx);
+      this.boss = bossCtx.boss;  // grab boss reference directly
     }
 
     if (this.cycleTimer <= 0 && this.boss) {
@@ -856,7 +859,10 @@ export class GameScene extends Phaser.Scene {
     const txt = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "WAVE CLEAR!", {
       fontFamily: "monospace", fontSize: "20px", color: "#a78bfa", stroke: "#000", strokeThickness: 3,
     }).setOrigin(0.5).setDepth(200).setScrollFactor(0);
-    this.tweens.add({ targets: txt, y: txt.y - 40, alpha: 0, duration: 1500, onComplete: () => txt.destroy() });
+    // Use setTimeout — Phaser tween onComplete is unreliable
+    setTimeout(() => { if (txt.scene) txt.setAlpha(0.5); }, 600);
+    setTimeout(() => { if (txt.scene) txt.setAlpha(0.2); }, 1000);
+    setTimeout(() => { if (txt.scene) txt.destroy(); }, 1500);
   }
 
   // ================================================================
@@ -1023,12 +1029,14 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = true;
     sfx.stopBgm();
     sfx.playStageClear();
-    this.time.delayedCall(500, () => sfx.startBgm(BGM_TRACKS.victory));
+    setTimeout(() => sfx.startBgm(BGM_TRACKS.victory), 500);
 
     const flash = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfbbf24, 0.2)
       .setDepth(200).setScrollFactor(0);
-    this.tweens.add({ targets: flash, alpha: 0, duration: 1000, onComplete: () => flash.destroy() });
-    this.time.delayedCall(800, () => this.showCycleClear());
+    // Use setTimeout — Phaser tween onComplete is unreliable
+    setTimeout(() => { if (flash.scene) flash.setAlpha(0.05); }, 500);
+    setTimeout(() => { if (flash.scene) flash.destroy(); }, 1000);
+    setTimeout(() => this.showCycleClear(), 800);
   }
 
   private showCycleClear(): void {
@@ -1068,15 +1076,24 @@ export class GameScene extends Phaser.Scene {
     this.legions.push({ ace: evoName, companions: companionNames, dps: totalDps, color: legionColor });
 
     const btnBg = this.add.rectangle(GAME_WIDTH / 2, 400, 200, 50, 0x667eea, 0.9)
-      .setDepth(401).setScrollFactor(0).setInteractive({ useHandCursor: true });
+      .setDepth(401).setScrollFactor(0);
     const btnText = this.add.text(GAME_WIDTH / 2, 400, "NEXT CYCLE \u2192", {
       fontFamily: "monospace", fontSize: "16px", color: "#fff",
     }).setOrigin(0.5).setDepth(402).setScrollFactor(0);
-    this.tweens.add({ targets: [btnBg, btnText], alpha: 0.5, yoyo: true, repeat: -1, duration: 800 });
-    btnBg.on("pointerdown", () => this.startNextCycle());
-    this.time.delayedCall(2000, () => {
+    // Pulse effect via setTimeout loop (no tween onComplete dependency)
+    let pulse = true;
+    const doPulse = () => {
+      if (!btnBg.scene) return;
+      pulse = !pulse;
+      btnBg.setAlpha(pulse ? 0.9 : 0.5);
+      btnText.setAlpha(pulse ? 1 : 0.5);
+      setTimeout(doPulse, 800);
+    };
+    setTimeout(doPulse, 800);
+    // Use scene-level input — scrollFactor(0) hit-testing is unreliable
+    setTimeout(() => {
       this.input.once("pointerdown", () => this.startNextCycle());
-    });
+    }, 500);
   }
 
   private startNextCycle(): void {
@@ -1304,34 +1321,29 @@ export class GameScene extends Phaser.Scene {
     this.showingAchievement = true;
     const ach = this.achievementQueue.shift()!;
 
-    const banner = this.add.rectangle(GAME_WIDTH / 2, -40, GAME_WIDTH - 20, 50, 0x1a1a2e, 0.95)
-      .setStrokeStyle(1, 0xfbbf24, 0.8).setDepth(700).setScrollFactor(0);
-    const achText = this.add.text(GAME_WIDTH / 2, -40, `\u2605 ${ach.name}\n${ach.desc}`, {
+    // Place at final position directly (no slide-in tween)
+    const banner = this.add.rectangle(GAME_WIDTH / 2, 70, GAME_WIDTH - 20, 50, 0x1a1a2e, 0.95)
+      .setStrokeStyle(1, 0xfbbf24, 0.8).setDepth(700).setScrollFactor(0).setAlpha(0);
+    const achText = this.add.text(GAME_WIDTH / 2, 70, `\u2605 ${ach.name}\n${ach.desc}`, {
       fontFamily: "monospace", fontSize: "11px", color: "#fbbf24", align: "center", lineSpacing: 2,
-    }).setOrigin(0.5).setDepth(701).setScrollFactor(0);
+    }).setOrigin(0.5).setDepth(701).setScrollFactor(0).setAlpha(0);
 
-    this.tweens.add({
-      targets: [banner, achText],
-      y: 70,
-      duration: 400,
-      ease: "Back.easeOut",
-      onComplete: () => {
-        this.time.delayedCall(2000, () => {
-          this.tweens.add({
-            targets: [banner, achText],
-            y: -40,
-            duration: 300,
-            ease: "Cubic.easeIn",
-            onComplete: () => {
-              banner.destroy();
-              achText.destroy();
-              this.showingAchievement = false;
-              this.processAchievementQueue();
-            },
-          });
-        });
-      },
-    });
+    // Fade in
+    setTimeout(() => {
+      if (banner.scene) banner.setAlpha(0.95);
+      if (achText.scene) achText.setAlpha(1);
+    }, 50);
+    // Hold, then fade out and destroy
+    setTimeout(() => {
+      if (banner.scene) banner.setAlpha(0.3);
+      if (achText.scene) achText.setAlpha(0.3);
+    }, 2400);
+    setTimeout(() => {
+      if (banner.scene) banner.destroy();
+      if (achText.scene) achText.destroy();
+      this.showingAchievement = false;
+      this.processAchievementQueue();
+    }, 2700);
   }
 
   // ================================================================
