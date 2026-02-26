@@ -169,7 +169,9 @@ export function updateDangerVignette(ctx: GameContext): void {
 // ================================================================
 
 export function showWarning(ctx: GameContext, text: string): void {
-  const warn = ctx.scene.add
+  const scene = ctx.scene;
+
+  const warn = scene.add
     .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, text, {
       fontFamily: "monospace",
       fontSize: "32px",
@@ -180,43 +182,33 @@ export function showWarning(ctx: GameContext, text: string): void {
     .setOrigin(0.5)
     .setDepth(300)
     .setScrollFactor(0)
-    .setAlpha(0);
+    .setAlpha(1);
 
-  // Simple sequential tweens — no chain/yoyo/repeat, just delayedCall
-  ctx.scene.tweens.add({
-    targets: warn,
-    alpha: 1,
-    duration: 250,
-    onComplete: () => {
-      ctx.scene.time.delayedCall(600, () => {
-        ctx.scene.tweens.add({
-          targets: warn,
-          alpha: 0,
-          duration: 300,
-          onComplete: () => warn.destroy(),
-        });
-      });
-    },
-  });
-
-  // Red flash — same pattern
-  const flash = ctx.scene.add
-    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0)
+  const flash = scene.add
+    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.15)
     .setDepth(200)
     .setScrollFactor(0);
-  ctx.scene.tweens.add({
-    targets: flash,
-    alpha: 0.18,
-    duration: 150,
-    onComplete: () => {
-      ctx.scene.tweens.add({
-        targets: flash,
-        alpha: 0,
-        duration: 350,
-        onComplete: () => flash.destroy(),
-      });
-    },
-  });
+
+  // Use plain JavaScript setTimeout — Phaser tweens/timers have proven unreliable
+  // for onComplete callbacks in this codebase. setTimeout is 100% reliable.
+  // Flash: quick fade
+  setTimeout(() => {
+    if (flash.scene) flash.setAlpha(0.05);
+  }, 200);
+  setTimeout(() => {
+    if (flash.scene) flash.destroy();
+  }, 500);
+
+  // Warning text: hold 800ms, then destroy
+  setTimeout(() => {
+    if (warn.scene) warn.setAlpha(0.5);
+  }, 800);
+  setTimeout(() => {
+    if (warn.scene) warn.setAlpha(0.2);
+  }, 1000);
+  setTimeout(() => {
+    if (warn.scene) warn.destroy();
+  }, 1200);
 }
 
 // ================================================================
