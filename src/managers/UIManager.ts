@@ -182,12 +182,14 @@ export function showWarning(ctx: GameContext, text: string): void {
     .setScrollFactor(0)
     .setAlpha(0);
 
-  ctx.scene.tweens.add({
+  // Fade in → hold → fade out → destroy. No yoyo/repeat.
+  ctx.scene.tweens.chain({
     targets: warn,
-    alpha: 1,
-    duration: 300,
-    yoyo: true,
-    repeat: 2,
+    tweens: [
+      { alpha: 1, duration: 250 },
+      { alpha: 1, duration: 600, hold: 600 },
+      { alpha: 0, duration: 300 },
+    ],
     onComplete: () => warn.destroy(),
   });
 

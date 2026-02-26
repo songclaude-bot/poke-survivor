@@ -620,9 +620,9 @@ export class LobbyScene extends Phaser.Scene {
       const row = Math.floor(i / 2);
       const col = i % 2;
       const itemW = (GAME_WIDTH - 30) / 2;
-      const itemH = 82;
+      const itemH = 90;
       const ix = 10 + col * (itemW + 10);
-      const iy = startY + 35 + row * (itemH + 8);
+      const iy = startY + 35 + row * (itemH + 12);
 
       const currentLv = this.saveData.upgradeLevels[upg.id] ?? 0;
       const isMaxed = currentLv >= upg.maxLevel;
@@ -684,7 +684,7 @@ export class LobbyScene extends Phaser.Scene {
         this.contentContainer.add(createButton({
           scene: this,
           x: ix + itemW / 2,
-          y: iy + itemH - 4,
+          y: iy + itemH - 14,
           width: itemW - 16,
           height: 22,
           label: `${cost} coins`,
