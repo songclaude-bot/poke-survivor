@@ -40,6 +40,9 @@ import {
   CYCLE_TILES,
 } from "../data/GameData";
 
+// UI Components
+import { createButton, createPanel } from "../ui/UIComponents";
+
 // Managers
 import type { GameContext } from "../managers/GameContext";
 import {
@@ -868,45 +871,65 @@ export class GameScene extends Phaser.Scene {
     const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8).setScrollFactor(0);
     this.pauseContainer.add(overlay);
 
-    const title = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, "PAUSED", {
-      fontFamily: "monospace", fontSize: "28px", color: "#667eea", stroke: "#000", strokeThickness: 3,
-    }).setOrigin(0.5).setScrollFactor(0);
+    // Panel background
+    const panelG = createPanel({
+      scene: this, x: GAME_WIDTH / 2 - 130, y: GAME_HEIGHT / 2 - 120,
+      width: 260, height: 280, fillColor: 0x0e0e1a, borderColor: 0x667eea, depth: 500,
+    });
+    panelG.setScrollFactor(0);
+    this.pauseContainer.add(panelG);
+
+    const title = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 90, "PAUSED", {
+      fontFamily: "monospace", fontSize: "28px", color: "#667eea",
+      stroke: "#000", strokeThickness: 4, fontStyle: "bold",
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
     this.pauseContainer.add(title);
 
-    const resumeBtn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "[ Resume ]", {
-      fontFamily: "monospace", fontSize: "18px", color: "#3bc95e",
-    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
-    resumeBtn.on("pointerdown", () => this.resumeGame());
-    resumeBtn.on("pointerover", () => resumeBtn.setColor("#4ade80"));
-    resumeBtn.on("pointerout", () => resumeBtn.setColor("#3bc95e"));
+    // Resume button
+    const resumeBtn = createButton({
+      scene: this, x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 - 20,
+      width: 200, height: 44, label: "RESUME", fontSize: "16px",
+      color: 0x1a2e1a, textColor: "#4ade80", borderColor: 0x4ade80, depth: 501,
+      onClick: () => this.resumeGame(),
+    });
+    resumeBtn.setScrollFactor(0);
     this.pauseContainer.add(resumeBtn);
 
-    const volLabel = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, "Volume", {
-      fontFamily: "monospace", fontSize: "12px", color: "#888",
-    }).setOrigin(0.5).setScrollFactor(0);
+    // Volume controls
+    const volLabel = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40, "Volume", {
+      fontFamily: "monospace", fontSize: "11px", color: "#888", fontStyle: "bold",
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
     this.pauseContainer.add(volLabel);
 
-    const volDown = this.add.text(GAME_WIDTH / 2 - 60, GAME_HEIGHT / 2 + 80, "[ - ]", {
-      fontFamily: "monospace", fontSize: "16px", color: "#fbbf24",
-    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
-    volDown.on("pointerdown", () => sfx.adjustVolume(-0.1));
-    this.pauseContainer.add(volDown);
-
-    const volUp = this.add.text(GAME_WIDTH / 2 + 60, GAME_HEIGHT / 2 + 80, "[ + ]", {
-      fontFamily: "monospace", fontSize: "16px", color: "#fbbf24",
-    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
-    volUp.on("pointerdown", () => sfx.adjustVolume(0.1));
-    this.pauseContainer.add(volUp);
-
-    const menuBtn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, "[ Main Menu ]", {
-      fontFamily: "monospace", fontSize: "16px", color: "#f43f5e",
-    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
-    menuBtn.on("pointerdown", () => {
-      sfx.stopBgm();
-      this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
+    const volDownBtn = createButton({
+      scene: this, x: GAME_WIDTH / 2 - 55, y: GAME_HEIGHT / 2 + 70,
+      width: 70, height: 34, label: "–", fontSize: "18px",
+      color: 0x1a1a2e, textColor: "#fbbf24", borderColor: 0xfbbf24, depth: 501,
+      onClick: () => sfx.adjustVolume(-0.1),
     });
-    menuBtn.on("pointerover", () => menuBtn.setColor("#ff6b6b"));
-    menuBtn.on("pointerout", () => menuBtn.setColor("#f43f5e"));
+    volDownBtn.setScrollFactor(0);
+    this.pauseContainer.add(volDownBtn);
+
+    const volUpBtn = createButton({
+      scene: this, x: GAME_WIDTH / 2 + 55, y: GAME_HEIGHT / 2 + 70,
+      width: 70, height: 34, label: "+", fontSize: "18px",
+      color: 0x1a1a2e, textColor: "#fbbf24", borderColor: 0xfbbf24, depth: 501,
+      onClick: () => sfx.adjustVolume(0.1),
+    });
+    volUpBtn.setScrollFactor(0);
+    this.pauseContainer.add(volUpBtn);
+
+    // Main menu button
+    const menuBtn = createButton({
+      scene: this, x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 125,
+      width: 200, height: 40, label: "MAIN MENU", fontSize: "14px",
+      color: 0x2e1a1a, textColor: "#f43f5e", borderColor: 0xf43f5e, depth: 501,
+      onClick: () => {
+        sfx.stopBgm();
+        this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
+      },
+    });
+    menuBtn.setScrollFactor(0);
     this.pauseContainer.add(menuBtn);
   }
 
@@ -927,39 +950,60 @@ export class GameScene extends Phaser.Scene {
     sfx.playDeath();
     this.saveHighScore();
 
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7)
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75)
       .setDepth(300).setScrollFactor(0);
 
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30, "DEFEATED", {
-      fontFamily: "monospace", fontSize: "28px", color: "#f43f5e", stroke: "#000", strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(301).setScrollFactor(0);
+    // Panel
+    const panelG = createPanel({
+      scene: this, x: GAME_WIDTH / 2 - 150, y: GAME_HEIGHT / 2 - 100,
+      width: 300, height: 310, fillColor: 0x0e0e1a, borderColor: 0xf43f5e, depth: 301,
+    });
+    panelG.setScrollFactor(0);
+
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 70, "DEFEATED", {
+      fontFamily: "monospace", fontSize: "28px", color: "#f43f5e",
+      stroke: "#000", strokeThickness: 4, fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(302).setScrollFactor(0);
 
     const evoName = EVOLUTION_CHAINS[this.ace.pokemonKey]?.[this.aceEvoStage]?.name ?? this.ace.pokemonKey;
     const totalTimeStr = formatTime(this.totalSurvivalTime);
     const diffLabel = getDifficultyLabel(this.cycleNumber);
+    const coinsEarned = this.getEarnedCoins();
     const statsLines = [
       `${evoName}  Lv.${this.level}`, "",
       `Kills: ${this.kills}    Wave: ${this.waveNumber}`,
       `Cycle: ${this.cycleNumber}    Party: ${this.companions.length + 1}`,
       `Total Time: ${totalTimeStr}`,
       diffLabel ? `Difficulty: ${diffLabel}` : "",
+      `Coins: +${coinsEarned}`,
     ].filter(Boolean);
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 15, statsLines.join("\n"), {
-      fontFamily: "monospace", fontSize: "13px", color: "#ccc", align: "center", lineSpacing: 4,
-    }).setOrigin(0.5, 0).setDepth(301).setScrollFactor(0);
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 35, statsLines.join("\n"), {
+      fontFamily: "monospace", fontSize: "12px", color: "#ccc",
+      align: "center", lineSpacing: 4,
+    }).setOrigin(0.5, 0).setDepth(302).setScrollFactor(0);
 
     const hs = this.saveData.highScore;
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 105,
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 110,
       `Best: Kill ${hs.kills} / Wave ${hs.wave} / Lv.${hs.level}`, {
-      fontFamily: "monospace", fontSize: "10px", color: "#fbbf24", align: "center",
-    }).setOrigin(0.5).setDepth(301).setScrollFactor(0);
+      fontFamily: "monospace", fontSize: "10px", color: "#fbbf24",
+      align: "center", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(302).setScrollFactor(0);
 
-    const retry = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140, "[ Tap to Retry ]", {
-      fontFamily: "monospace", fontSize: "16px", color: "#667eea",
-    }).setOrigin(0.5).setDepth(301).setScrollFactor(0);
-    this.tweens.add({ targets: retry, alpha: 0.3, yoyo: true, repeat: -1, duration: 800 });
-    this.input.once("pointerdown", () => {
-      this.scene.start("LobbyScene", { coins: this.getEarnedCoins() });
+    // Retry button
+    const retryBtn = createButton({
+      scene: this, x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 155,
+      width: 220, height: 44, label: "RETRY", fontSize: "16px",
+      color: 0x1a1a2e, textColor: "#667eea", borderColor: 0x667eea, depth: 302,
+      onClick: () => {
+        this.scene.start("LobbyScene", { coins: coinsEarned });
+      },
+    });
+    retryBtn.setScrollFactor(0);
+
+    // Pulse animation on retry button
+    this.tweens.add({
+      targets: retryBtn, scaleX: 1.03, scaleY: 1.03,
+      duration: 800, yoyo: true, repeat: -1, ease: "Sine.easeInOut",
     });
   }
 
