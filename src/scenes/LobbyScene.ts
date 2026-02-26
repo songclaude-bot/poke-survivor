@@ -282,7 +282,7 @@ export class LobbyScene extends Phaser.Scene {
 
     // Card panel
     const cardW = GAME_WIDTH - 30;
-    const cardH = 220;
+    const cardH = 230;
     const cardX = 15;
 
     this.addPanel(cardX, y, cardW, cardH,
@@ -428,7 +428,7 @@ export class LobbyScene extends Phaser.Scene {
       });
     }
 
-    // Stat bars
+    // Stat bars — 2x2 grid layout below evolution chain
     const stats = [
       { label: "HP",  value: starter.hp,   max: 200, color: 0x3bc95e },
       { label: "ATK", value: starter.atk,  max: 20,  color: 0xf43f5e },
@@ -436,35 +436,32 @@ export class LobbyScene extends Phaser.Scene {
       { label: "RNG", value: starter.range, max: 160, color: 0xfbbf24 },
     ];
 
-    const barW = 100;
-    const barH = 7;
-    const barStartX = cardX + 180;
-    const barStartY = y + 160;
+    const barW = 110;
+    const barH = 6;
+    const statColW = (cardW - 30) / 2;
+    const statStartY = y + 168;
 
     stats.forEach((stat, i) => {
-      const sy = barStartY + i * 16;
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const sx = cardX + 15 + col * statColW;
+      const sy = statStartY + row * 22;
       this.contentContainer.add(
-        this.add.text(barStartX - 6, sy, stat.label, {
-          fontFamily: "monospace", fontSize: "7px", color: "#777",
-        }).setOrigin(1, 0.5)
+        this.add.text(sx, sy - 8, `${stat.label}  ${stat.value}`, {
+          fontFamily: "monospace", fontSize: "8px", color: "#999",
+        })
       );
       const barBg = this.add.graphics();
       barBg.fillStyle(0x222233, 0.8);
-      barBg.fillRoundedRect(barStartX, sy - barH / 2, barW, barH, 2);
+      barBg.fillRoundedRect(sx, sy + 2, barW, barH, 2);
       this.contentContainer.add(barBg);
 
       const ratio = Math.min(stat.value / stat.max, 1);
       const fillW = Math.max(2, barW * ratio);
       const barFill = this.add.graphics();
       barFill.fillStyle(stat.color, 0.85);
-      barFill.fillRoundedRect(barStartX, sy - barH / 2, fillW, barH, 2);
+      barFill.fillRoundedRect(sx, sy + 2, fillW, barH, 2);
       this.contentContainer.add(barFill);
-
-      this.contentContainer.add(
-        this.add.text(barStartX + barW + 5, sy, `${stat.value}`, {
-          fontFamily: "monospace", fontSize: "7px", color: "#aaa",
-        }).setOrigin(0, 0.5)
-      );
     });
 
     // START button
