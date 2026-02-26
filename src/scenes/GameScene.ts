@@ -310,10 +310,11 @@ export class GameScene extends Phaser.Scene {
 
   init(data?: CyclePassData): void {
     this.cycleTransitioning = false;
-    if (data?.cycleNumber) this.cycleNumber = data.cycleNumber;
-    if (data?.legions) this.legions = [...data.legions];
+    // Default to cycle 1; only carry over if explicitly passed (cycle transition)
+    this.cycleNumber = data?.cycleNumber ?? 1;
+    this.legions = data?.legions ? [...data.legions] : [];
     if (data?.starterKey) this.starterKey = data.starterKey;
-    if (data?.totalTime) this.totalSurvivalTime = data.totalTime;
+    this.totalSurvivalTime = data?.totalTime ?? 0;
   }
 
   create(): void {
@@ -685,11 +686,17 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0).setDepth(500);
     const text = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2,
       ["HOW TO PLAY", "", "Drag anywhere to move", "Auto-attack nearest enemy",
-       "Collect XP gems to level up", "Survive waves & defeat the boss!", "", "[ Tap to Start ]"].join("\n"),
+       "Collect XP gems to level up", "Survive waves & defeat the boss!", "", "Tap to Start"].join("\n"),
       { fontFamily: "monospace", fontSize: "14px", color: "#fff", align: "center", lineSpacing: 6 },
     ).setOrigin(0.5).setScrollFactor(0).setDepth(501);
-    overlay.setInteractive();
-    overlay.once("pointerdown", () => { overlay.destroy(); text.destroy(); this.isPaused = false; });
+
+    // Use scene-level input instead of overlay.setInteractive() — scrollFactor(0)
+    // objects can have unreliable hit-testing when camera is offset from origin.
+    this.input.once("pointerdown", () => {
+      overlay.destroy();
+      text.destroy();
+      this.isPaused = false;
+    });
   }
 
   // ================================================================
