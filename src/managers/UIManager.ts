@@ -182,29 +182,40 @@ export function showWarning(ctx: GameContext, text: string): void {
     .setScrollFactor(0)
     .setAlpha(0);
 
-  // Fade in → hold → fade out → destroy. No yoyo/repeat.
-  ctx.scene.tweens.chain({
+  // Simple sequential tweens — no chain/yoyo/repeat, just delayedCall
+  ctx.scene.tweens.add({
     targets: warn,
-    tweens: [
-      { alpha: 1, duration: 250 },
-      { alpha: 1, duration: 600, hold: 600 },
-      { alpha: 0, duration: 300 },
-    ],
-    onComplete: () => warn.destroy(),
+    alpha: 1,
+    duration: 250,
+    onComplete: () => {
+      ctx.scene.time.delayedCall(600, () => {
+        ctx.scene.tweens.add({
+          targets: warn,
+          alpha: 0,
+          duration: 300,
+          onComplete: () => warn.destroy(),
+        });
+      });
+    },
   });
 
-  // Red flash: fade in then fade out, simple and clean
+  // Red flash — same pattern
   const flash = ctx.scene.add
     .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0)
     .setDepth(200)
     .setScrollFactor(0);
-  ctx.scene.tweens.chain({
+  ctx.scene.tweens.add({
     targets: flash,
-    tweens: [
-      { alpha: 0.18, duration: 150 },
-      { alpha: 0, duration: 350 },
-    ],
-    onComplete: () => flash.destroy(),
+    alpha: 0.18,
+    duration: 150,
+    onComplete: () => {
+      ctx.scene.tweens.add({
+        targets: flash,
+        alpha: 0,
+        duration: 350,
+        onComplete: () => flash.destroy(),
+      });
+    },
   });
 }
 
