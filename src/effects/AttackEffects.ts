@@ -201,7 +201,12 @@ export function playHitEffect(
 
   const sprite = scene.add.sprite(x, y, tKey, 0).setDepth(15).setScale(2);
   sprite.play(aKey);
-  sprite.once("animationcomplete", () => sprite.destroy());
+  // Use setTimeout — Phaser 3.90 animationcomplete event is unreliable
+  const anim = scene.anims.get(aKey);
+  const frameCount = anim?.frames?.length ?? 4;
+  const frameRate = anim?.frameRate ?? 16;
+  const durationMs = Math.ceil((frameCount / frameRate) * 1000) + 50;
+  setTimeout(() => { if (sprite.scene) sprite.destroy(); }, durationMs);
 }
 
 /**
@@ -222,7 +227,12 @@ export function playMeleeEffect(
 
   const sprite = scene.add.sprite(x, y, tKey, 0).setDepth(15).setScale(1.5);
   sprite.play(aKey);
-  sprite.once("animationcomplete", () => sprite.destroy());
+  // Use setTimeout — Phaser 3.90 animationcomplete event is unreliable
+  const anim = scene.anims.get(aKey);
+  const frameCount = anim?.frames?.length ?? 4;
+  const frameRate = anim?.frameRate ?? 16;
+  const durationMs = Math.ceil((frameCount / frameRate) * 1000) + 50;
+  setTimeout(() => { if (sprite.scene) sprite.destroy(); }, durationMs);
 }
 
 /**

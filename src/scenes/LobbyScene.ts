@@ -325,8 +325,8 @@ export class LobbyScene extends Phaser.Scene {
             this.selectedStarter = starter.key;
             this.refreshCoinBadge();
             this.buildTab(0);
-            // Flash effect
-            this.cameras.main.flash(300, 100, 255, 100);
+            // Subtle unlock glow (photosensitivity safe)
+            this.cameras.main.flash(150, 30, 80, 30);
           },
         }));
       }
@@ -572,7 +572,8 @@ export class LobbyScene extends Phaser.Scene {
     this.saveData.unlockedStarters.push("machop");
     saveSaveData(this.saveData);
 
-    this.cameras.main.flash(400, 255, 200, 0);
+    // Subtle machop unlock glow (photosensitivity safe)
+    this.cameras.main.flash(200, 80, 60, 0);
 
     const txt = this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "💪 MACHOP UNLOCKED! 💪\nFighting Spirit Starter", {
@@ -697,7 +698,8 @@ export class LobbyScene extends Phaser.Scene {
             saveSaveData(this.saveData);
             this.refreshCoinBadge();
             this.buildTab(1);
-            this.cameras.main.flash(200, 100, 180, 255);
+            // Subtle purchase glow (photosensitivity safe)
+            this.cameras.main.flash(120, 30, 50, 80);
           },
         }));
       }

@@ -150,14 +150,15 @@ function drawMinimap(ctx: GameContext): void {
 export function updateDangerVignette(ctx: GameContext): void {
   const hpRatio = ctx.ace.hp / ctx.ace.maxHp;
   if (hpRatio < 0.3) {
-    const pulse = Math.sin(ctx.scene.time.now * 0.005) * 0.15 + 0.2;
+    // Greatly reduced vignette — slow pulse, low opacity (photosensitivity safe)
+    const pulse = Math.sin(ctx.scene.time.now * 0.002) * 0.04 + 0.06;
     const intensity = (1 - hpRatio / 0.3) * pulse;
     ctx.dangerVignette.clear();
     ctx.dangerVignette.fillStyle(0xff0000, intensity);
-    ctx.dangerVignette.fillRect(0, 0, GAME_WIDTH, 40);
-    ctx.dangerVignette.fillRect(0, GAME_HEIGHT - 40, GAME_WIDTH, 40);
-    ctx.dangerVignette.fillRect(0, 0, 30, GAME_HEIGHT);
-    ctx.dangerVignette.fillRect(GAME_WIDTH - 30, 0, 30, GAME_HEIGHT);
+    ctx.dangerVignette.fillRect(0, 0, GAME_WIDTH, 20);
+    ctx.dangerVignette.fillRect(0, GAME_HEIGHT - 20, GAME_WIDTH, 20);
+    ctx.dangerVignette.fillRect(0, 0, 15, GAME_HEIGHT);
+    ctx.dangerVignette.fillRect(GAME_WIDTH - 15, 0, 15, GAME_HEIGHT);
     ctx.dangerVignette.setAlpha(1);
   } else {
     ctx.dangerVignette.clear();
@@ -184,8 +185,9 @@ export function showWarning(ctx: GameContext, text: string): void {
     .setScrollFactor(0)
     .setAlpha(1);
 
+  // Subtle warning flash — reduced to 0.06 alpha (photosensitivity safe)
   const flash = scene.add
-    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.15)
+    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.06)
     .setDepth(200)
     .setScrollFactor(0);
 

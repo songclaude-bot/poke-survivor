@@ -124,12 +124,18 @@ function playAttackPose(
 
   const savedWalkAnim = sprite.anims.currentAnim?.key;
   sprite.play(atkAnimKey);
-  sprite.once("animationcomplete", () => {
+  // Use setTimeout instead of animationcomplete — Phaser 3.90 event is unreliable
+  // and can cause the sprite to freeze permanently if the callback never fires.
+  const anim = ctx.scene.anims.get(atkAnimKey);
+  const frameCount = anim?.frames?.length ?? 4;
+  const frameRate = anim?.frameRate ?? 12;
+  const durationMs = Math.ceil((frameCount / frameRate) * 1000) + 50;
+  setTimeout(() => {
     if (!sprite.active) return;
     if (savedWalkAnim && ctx.scene.anims.exists(savedWalkAnim)) {
       sprite.play(savedWalkAnim);
     }
-  });
+  }, durationMs);
 }
 
 export function updateProjectiles(ctx: GameContext): void {
@@ -249,7 +255,8 @@ export function damageAce(ctx: GameContext, amount: number): void {
     ctx.ace.hp = 1;
     ctx.sturdyAvailable = false;
     showDamagePopup(ctx, ctx.ace.sprite.x, ctx.ace.sprite.y - 20, "STURDY!", "#fbbf24");
-    ctx.scene.cameras.main.flash(200, 255, 200, 0);
+    // Subtle tint instead of bright flash (photosensitivity safe)
+    ctx.scene.cameras.main.flash(100, 60, 80, 60);
     return;
   }
 
@@ -284,13 +291,11 @@ export function onEnemyDeath(ctx: GameContext, enemy: EnemyData): void {
   const wasBoss = enemy === ctx.boss;
   spawnDeathParticles(ctx, enemy.sprite.x, enemy.sprite.y, wasBoss);
 
+  // Reduced camera shake (photosensitivity safe) — boss only, minimal intensity
   if (wasBoss) {
-    ctx.scene.cameras.main.shake(300, 0.015);
-  } else if (enemy.isElite) {
-    ctx.scene.cameras.main.shake(100, 0.006);
-  } else if (ctx.killStreak >= 5) {
-    ctx.scene.cameras.main.shake(50, 0.003);
+    ctx.scene.cameras.main.shake(150, 0.005);
   }
+  // Elite and streak kills: no shake (was too aggressive)
 
   if (ctx.killStreak >= 10 && ctx.killStreak % 5 === 0) {
     showStreakText(ctx, ctx.killStreak);
@@ -379,7 +384,8 @@ export function collectXpGem(ctx: GameContext, gem: XpGem): void {
 function onLevelUp(ctx: GameContext): void {
   ctx.ace.attackRange += 3;
   if (ctx.ace.attackCooldown > 350) ctx.ace.attackCooldown -= 15;
-  ctx.scene.cameras.main.flash(200, 255, 255, 255);
+  // Subtle level-up flash (photosensitivity safe — reduced brightness)
+  ctx.scene.cameras.main.flash(120, 80, 80, 80);
   sfx.playLevelUp();
   // pendingLevelUp triggers showLevelUpSelection in GameScene
   ctx.pendingLevelUp = true;
@@ -468,8 +474,9 @@ function collectItem(ctx: GameContext, item: { sprite: Phaser.Physics.Arcade.Spr
       break;
     }
     case "bomb": {
-      ctx.scene.cameras.main.flash(150, 255, 160, 0);
-      ctx.scene.cameras.main.shake(200, 0.01);
+      // Bomb: subtle flash + minimal shake (photosensitivity safe)
+      ctx.scene.cameras.main.flash(100, 80, 50, 0);
+      ctx.scene.cameras.main.shake(80, 0.003);
       for (const e of ctx.enemies) {
         if (!e.sprite.active) continue;
         const dist = Phaser.Math.Distance.Between(
@@ -636,8 +643,9 @@ export function evolveAce(ctx: GameContext): void {
   }
   ctx.ace.sprite.setScale(stage.scale);
 
-  ctx.scene.cameras.main.flash(500, 255, 0, 255);
-  ctx.scene.cameras.main.shake(300, 0.01);
+  // Evolution: gentle purple glow + subtle shake (photosensitivity safe)
+  ctx.scene.cameras.main.flash(200, 80, 0, 80);
+  ctx.scene.cameras.main.shake(120, 0.004);
   spawnDeathParticles(ctx, ctx.ace.sprite.x, ctx.ace.sprite.y, true);
 
   const txt = ctx.scene.add

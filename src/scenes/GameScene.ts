@@ -1036,11 +1036,11 @@ export class GameScene extends Phaser.Scene {
     sfx.playStageClear();
     setTimeout(() => sfx.startBgm(BGM_TRACKS.victory), 500);
 
-    const flash = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfbbf24, 0.2)
+    // Subtle boss-defeat glow (photosensitivity safe — low alpha, gentle fade)
+    const flash = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfbbf24, 0.08)
       .setDepth(200).setScrollFactor(0);
-    // Use setTimeout — Phaser tween onComplete is unreliable
-    setTimeout(() => { if (flash.scene) flash.setAlpha(0.05); }, 500);
-    setTimeout(() => { if (flash.scene) flash.destroy(); }, 1000);
+    setTimeout(() => { if (flash.scene) flash.setAlpha(0.03); }, 400);
+    setTimeout(() => { if (flash.scene) flash.destroy(); }, 800);
     setTimeout(() => this.showCycleClear(), 800);
   }
 
