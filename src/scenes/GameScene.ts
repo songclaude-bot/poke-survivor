@@ -318,6 +318,8 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.resetState();
+    // Ensure physics is running — may be left paused from previous cycle's level-up/pause
+    this.physics.resume();
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     this.createStarfield();
@@ -1050,10 +1052,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showCycleClear(): void {
-    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.85)
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH + 100, GAME_HEIGHT + 100, 0x000000, 0.85)
       .setDepth(400).setScrollFactor(0);
 
-    this.add.text(GAME_WIDTH / 2, 80, "STAGE CLEAR!", {
+    // Layout using proportional Y positions so text never overlaps on any screen size
+    const titleY = GAME_HEIGHT * 0.10;
+    const statsY = GAME_HEIGHT * 0.20;
+    const legionY = GAME_HEIGHT * 0.52;
+    const partyY = GAME_HEIGHT * 0.58;
+    const btnY = GAME_HEIGHT * 0.72;
+
+    this.add.text(GAME_WIDTH / 2, titleY, "STAGE CLEAR!", {
       fontFamily: "monospace", fontSize: "24px", color: "#fbbf24", stroke: "#000", strokeThickness: 3,
     }).setOrigin(0.5).setDepth(401).setScrollFactor(0);
 
@@ -1066,12 +1075,12 @@ export class GameScene extends Phaser.Scene {
       `Party DPS: ${totalDps}`,
       `Time: ${formatTime(CYCLE_DURATION_SEC - this.cycleTimer)}`,
     ].join("\n");
-    this.add.text(GAME_WIDTH / 2, 140, stats, {
+    this.add.text(GAME_WIDTH / 2, statsY, stats, {
       fontFamily: "monospace", fontSize: "14px", color: "#ccc", align: "center", lineSpacing: 6,
     }).setOrigin(0.5, 0).setDepth(401).setScrollFactor(0);
 
     const legionColor = [0xffd700, 0x00ddff, 0xff4444][this.cycleNumber % 3];
-    this.add.text(GAME_WIDTH / 2, 260, "\u2014 LEGION FORMED \u2014", {
+    this.add.text(GAME_WIDTH / 2, legionY, "\u2014 LEGION FORMED \u2014", {
       fontFamily: "monospace", fontSize: "16px", color: "#667eea",
     }).setOrigin(0.5).setDepth(401).setScrollFactor(0);
 
@@ -1079,15 +1088,16 @@ export class GameScene extends Phaser.Scene {
       const key = c.sprite.texture.key.replace("pac-", "");
       return POKEMON_SPRITES[key]?.name ?? key;
     });
-    this.add.text(GAME_WIDTH / 2, 300, `${evoName} + ${companionNames.join(", ") || "Solo"}`, {
-      fontFamily: "monospace", fontSize: "12px", color: "#aaa",
+    this.add.text(GAME_WIDTH / 2, partyY, `${evoName} + ${companionNames.join(", ") || "Solo"}`, {
+      fontFamily: "monospace", fontSize: "12px", color: "#aaa", wordWrap: { width: GAME_WIDTH - 40 },
+      align: "center",
     }).setOrigin(0.5).setDepth(401).setScrollFactor(0);
 
     this.legions.push({ ace: evoName, companions: companionNames, dps: totalDps, color: legionColor });
 
-    const btnBg = this.add.rectangle(GAME_WIDTH / 2, 400, 200, 50, 0x667eea, 0.9)
+    const btnBg = this.add.rectangle(GAME_WIDTH / 2, btnY, 200, 50, 0x667eea, 0.9)
       .setDepth(401).setScrollFactor(0);
-    const btnText = this.add.text(GAME_WIDTH / 2, 400, "NEXT CYCLE \u2192", {
+    const btnText = this.add.text(GAME_WIDTH / 2, btnY, "NEXT CYCLE \u2192", {
       fontFamily: "monospace", fontSize: "16px", color: "#fff",
     }).setOrigin(0.5).setDepth(402).setScrollFactor(0);
     // Pulse effect via setTimeout loop (no tween onComplete dependency)
