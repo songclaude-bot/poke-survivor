@@ -458,6 +458,14 @@ export class GameScene extends Phaser.Scene {
     this.lifestealRate = 0;
     this.xpMagnetRange = 60;
     this.legionEntities = [];
+    // Clear stale object pools — scene.stop() destroys all game objects,
+    // but the array still holds references to destroyed Text objects.
+    // Reusing destroyed objects in Cycle 2+ causes exceptions that crash
+    // the Phaser update loop, freezing the entire frame.
+    this.dmgPopups = [];
+    this.achievementQueue = [];
+    this.showingAchievement = false;
+    this.manualPause = false;
   }
 
   private getDungeonTileKey(): string {
@@ -845,7 +853,10 @@ export class GameScene extends Phaser.Scene {
     if (this.waveNumber >= 2 && this.waveNumber % 2 === 0) {
       // Delay formation warning so it appears AFTER the wave warning fades
       const formationType = Math.floor(Math.random() * 3);
+      const currentCycle = this.cycleNumber;
       setTimeout(() => {
+        // Guard: skip if scene transitioned to a different cycle
+        if (this.cycleTransitioning || this.cycleNumber !== currentCycle) return;
         if (formationType === 0) spawnEncirclement(this.ctx, elapsed);
         else if (formationType === 1) spawnDiagonalMarch(this.ctx, elapsed);
         else spawnRushSwarm(this.ctx, elapsed);
