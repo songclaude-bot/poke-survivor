@@ -232,6 +232,10 @@ export function showWarning(ctx: GameContext, text: string): void {
 export function showDamagePopup(ctx: GameContext, x: number, y: number, amount: number | string, color = "#fff"): void {
   const label = typeof amount === "string" ? amount : Math.ceil(amount).toString();
   let txt = ctx.dmgPopups.pop();
+  // Guard: discard stale/destroyed Text objects left over from previous cycle
+  if (txt && (!txt.scene || !txt.active)) {
+    txt = undefined;
+  }
   if (txt) {
     txt.setPosition(x, y - 10);
     txt.setText(label);
