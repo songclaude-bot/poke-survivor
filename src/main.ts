@@ -11,7 +11,7 @@ document.body.style.padding = "0";
 document.body.style.overflow = "hidden";
 document.body.style.background = "#0a0a0f";
 document.body.style.width = "100vw";
-document.body.style.height = "100vh";
+document.body.style.height = "100dvh";
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -22,6 +22,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    expandParent: true,
   },
   physics: {
     default: "arcade",

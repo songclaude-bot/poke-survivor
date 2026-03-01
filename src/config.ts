@@ -1,6 +1,17 @@
-/** Game-wide constants */
-export const GAME_WIDTH = 390;
-export const GAME_HEIGHT = 844;
+/** Game-wide constants — sized to fill the device viewport */
+function getGameSize(): { w: number; h: number } {
+  const vw = window.innerWidth || 390;
+  const vh = window.innerHeight || 844;
+  // Cap logical width to keep UI usable on tablets/desktop
+  const maxW = 500;
+  const w = Math.min(vw, maxW);
+  // Maintain the device's natural aspect ratio
+  const h = Math.round((vh / vw) * w);
+  return { w, h };
+}
+const _size = getGameSize();
+export const GAME_WIDTH = _size.w;
+export const GAME_HEIGHT = _size.h;
 
 /** World size — player roams freely in this space, camera follows */
 export const WORLD_WIDTH = 3000;
