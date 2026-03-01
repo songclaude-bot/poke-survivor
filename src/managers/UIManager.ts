@@ -169,8 +169,18 @@ export function updateDangerVignette(ctx: GameContext): void {
 // WARNING BANNER
 // ================================================================
 
+// Track active warning so we never stack multiple warnings on screen
+let _activeWarning: Phaser.GameObjects.Text | null = null;
+let _activeFlash: Phaser.GameObjects.Rectangle | null = null;
+
 export function showWarning(ctx: GameContext, text: string): void {
   const scene = ctx.scene;
+
+  // Destroy any existing warning first — prevents overlapping text
+  if (_activeWarning?.scene) _activeWarning.destroy();
+  if (_activeFlash?.scene) _activeFlash.destroy();
+  _activeWarning = null;
+  _activeFlash = null;
 
   const warn = scene.add
     .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, text, {
@@ -184,24 +194,25 @@ export function showWarning(ctx: GameContext, text: string): void {
     .setDepth(300)
     .setScrollFactor(0)
     .setAlpha(1);
+  _activeWarning = warn;
 
   // Subtle warning flash — reduced to 0.06 alpha (photosensitivity safe)
   const flash = scene.add
-    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xff0000, 0.06)
+    .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH + 100, GAME_HEIGHT + 100, 0xff0000, 0.06)
     .setDepth(200)
     .setScrollFactor(0);
+  _activeFlash = flash;
 
-  // Use plain JavaScript setTimeout — Phaser tweens/timers have proven unreliable
-  // for onComplete callbacks in this codebase. setTimeout is 100% reliable.
   // Flash: quick fade
   setTimeout(() => {
-    if (flash.scene) flash.setAlpha(0.05);
+    if (flash.scene) flash.setAlpha(0.03);
   }, 200);
   setTimeout(() => {
     if (flash.scene) flash.destroy();
+    if (_activeFlash === flash) _activeFlash = null;
   }, 500);
 
-  // Warning text: hold 800ms, then destroy
+  // Warning text: hold 800ms, then fade and destroy
   setTimeout(() => {
     if (warn.scene) warn.setAlpha(0.5);
   }, 800);
@@ -210,6 +221,7 @@ export function showWarning(ctx: GameContext, text: string): void {
   }, 1000);
   setTimeout(() => {
     if (warn.scene) warn.destroy();
+    if (_activeWarning === warn) _activeWarning = null;
   }, 1200);
 }
 

@@ -841,10 +841,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.waveNumber >= 2 && this.waveNumber % 2 === 0) {
+      // Delay formation warning so it appears AFTER the wave warning fades
       const formationType = Math.floor(Math.random() * 3);
-      if (formationType === 0) spawnEncirclement(this.ctx, elapsed);
-      else if (formationType === 1) spawnDiagonalMarch(this.ctx, elapsed);
-      else spawnRushSwarm(this.ctx, elapsed);
+      setTimeout(() => {
+        if (formationType === 0) spawnEncirclement(this.ctx, elapsed);
+        else if (formationType === 1) spawnDiagonalMarch(this.ctx, elapsed);
+        else spawnRushSwarm(this.ctx, elapsed);
+      }, 1300);
     }
   }
 
@@ -885,13 +888,14 @@ export class GameScene extends Phaser.Scene {
   private showPauseMenu(): void {
     this.manualPause = true;
     this.isPaused = true;
+    this.physics.pause(); // Freeze physics
     this.pauseContainer.removeAll(true);
     // Position container at camera origin — children use screen-relative coords
     // but are in world space, so interactive hit-testing works correctly.
     this.pauseContainer.setPosition(this.cameras.main.scrollX, this.cameras.main.scrollY);
     this.pauseContainer.setVisible(true);
 
-    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8);
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH + 100, GAME_HEIGHT + 100, 0x000000, 0.8);
     this.pauseContainer.add(overlay);
 
     const panelG = createPanel({
@@ -950,6 +954,7 @@ export class GameScene extends Phaser.Scene {
   private resumeGame(): void {
     this.manualPause = false;
     this.isPaused = false;
+    this.physics.resume(); // Unfreeze physics
     this.pauseContainer.setVisible(false);
     this.pauseContainer.removeAll(true);
   }
@@ -1123,6 +1128,7 @@ export class GameScene extends Phaser.Scene {
   private showLevelUpSelection(): void {
     this.isPaused = true;
     this.pendingLevelUp = false; // Consumed
+    this.physics.pause(); // Freeze all physics bodies so enemies stop moving
 
     this.ace.sprite.setVelocity(0, 0);
     this.joyVector.set(0, 0);
@@ -1135,7 +1141,8 @@ export class GameScene extends Phaser.Scene {
     this.levelUpContainer.setPosition(this.cameras.main.scrollX, this.cameras.main.scrollY);
     this.levelUpContainer.setVisible(true);
 
-    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7);
+    // Overlay: generous size to fully cover any viewport
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH + 100, GAME_HEIGHT + 100, 0x000000, 0.8);
     this.levelUpContainer.add(overlay);
 
     const title = this.add.text(GAME_WIDTH / 2, 60, `LEVEL ${this.level}!`, {
@@ -1294,6 +1301,7 @@ export class GameScene extends Phaser.Scene {
   private closeLevelUpSelection(): void {
     this.levelUpContainer.setVisible(false);
     this.levelUpContainer.removeAll(true);
+    this.physics.resume(); // Unfreeze physics bodies
     setTimeout(() => { this.isPaused = false; }, 100);
   }
 
