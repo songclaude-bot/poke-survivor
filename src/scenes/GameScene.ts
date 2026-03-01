@@ -318,8 +318,6 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.resetState();
-    // Ensure physics is running — may be left paused from previous cycle's level-up/pause
-    this.physics.resume();
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     this.createStarfield();
@@ -335,6 +333,10 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.startFollow(this.ace.sprite, true, 0.1, 0.1);
     this.cameras.main.fadeIn(500, 0, 0, 0);
+
+    // Ensure physics is running after full setup — may be left paused from
+    // previous cycle's level-up/pause menu.
+    this.physics.resume();
 
     if (this.cycleNumber === 1) this.showTutorial();
   }
@@ -1133,13 +1135,16 @@ export class GameScene extends Phaser.Scene {
     sfx.stopBgm();
     const nextCycle = this.cycleNumber + 1;
     const savedLegions = [...this.legions];
-    this.scene.stop("GameScene");
-    this.scene.start("GameScene", {
+    // Use scene.restart() instead of stop()+start() — Phaser 3.90 can freeze
+    // when stop and start are called on the same scene in the same frame
+    // (see https://github.com/photonstorm/phaser/issues/6282).
+    // restart() handles shutdown→init→create internally in the correct order.
+    this.scene.restart({
       cycleNumber: nextCycle,
       legions: savedLegions,
       starterKey: this.starterKey,
       totalTime: this.totalSurvivalTime,
-    });
+    } as CyclePassData);
   }
 
   // ================================================================
