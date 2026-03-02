@@ -9,10 +9,11 @@ import Phaser from "phaser";
  * Directions: 0=Down, 1=DownRight, 2=Right, 3=UpRight, 4=Up, 5=UpLeft, 6=Left, 7=DownLeft
  */
 
+// jsDelivr CDN — 7-day browser cache (vs 5 minutes on raw.githubusercontent.com)
 const PAC_SPRITE_BASE =
-  "https://raw.githubusercontent.com/keldaanCommunity/pokemonAutoChess/master/app/public/src/assets/pokemons";
+  "https://cdn.jsdelivr.net/gh/keldaanCommunity/pokemonAutoChess@master/app/public/src/assets/pokemons";
 const PAC_PORTRAIT_BASE =
-  "https://raw.githubusercontent.com/keldaanCommunity/pokemonAutoChess/master/app/public/src/assets/portraits";
+  "https://cdn.jsdelivr.net/gh/keldaanCommunity/pokemonAutoChess@master/app/public/src/assets/portraits";
 
 /** Direction row mapping — matches PAC atlas direction numbering */
 export const PMD_DIRECTIONS = [

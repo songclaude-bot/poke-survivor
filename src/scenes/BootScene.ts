@@ -4,6 +4,7 @@ import {
   loadPmdSprites,
   loadPmdPortraits,
   loadPmdAttackSprites,
+  ESSENTIAL_KEYS,
   createPmdAnimations,
   createPmdAttackAnimations,
 } from "../sprites/PmdSpriteLoader";
@@ -31,30 +32,29 @@ const LOADING_TIPS = [
 ];
 
 /**
- * BootScene — Generate placeholder graphics & load PMD sprites.
+ * BootScene — Two-phase boot:
+ * Phase 1 (preload): Local assets only (placeholders, dungeon tiles, attack effects)
+ * Phase 2 (create):  Show confirmation screen → user taps → download remote sprites
  */
 export class BootScene extends Phaser.Scene {
   private progressBar!: Phaser.GameObjects.Graphics;
   private tipText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
-  private tipTimer = 0;
   private tipIdx = 0;
+  private splashContainer!: Phaser.GameObjects.Container;
 
   constructor() {
     super({ key: "BootScene" });
   }
 
+  // ────────────────────────────────────────────
+  // Phase 1: Local assets only (fast, no network)
+  // ────────────────────────────────────────────
+
   preload(): void {
     this.createPlaceholderSprites();
-    this.createLoadingUI();
 
-    // Configure loader — higher parallelism for faster boot
-    this.load.maxParallelDownloads = 12;
-    this.load.on("loaderror", (file: Phaser.Loader.File) => {
-      console.warn(`[BootScene] Failed to load: ${file.key} — using placeholder`);
-    });
-
-    // Load dungeon floor tiles
+    // Only load bundled local assets — no remote network requests
     this.load.image("dungeon-floor", "assets/dungeon-floor.png");
     this.load.image("dungeon-tiny", "assets/dungeon-tiny.png");
     this.load.image("dungeon-steel", "assets/dungeon-steel.png");
@@ -62,13 +62,131 @@ export class BootScene extends Phaser.Scene {
     this.load.image("dungeon-forest", "assets/dungeon-forest.png");
     this.load.image("dungeon-frost", "assets/dungeon-frost.png");
 
-    // Load PMD sprites (async, may fail on network issues)
+    // Attack effect spritesheets (local)
+    loadAttackEffects(this);
+  }
+
+  // ────────────────────────────────────────────
+  // Phase 2: Show confirmation, then load remote
+  // ────────────────────────────────────────────
+
+  create(): void {
+    createAttackAnimations(this);
+    this.showSplashScreen();
+  }
+
+  private showSplashScreen(): void {
+    const cx = GAME_WIDTH / 2;
+    const cy = GAME_HEIGHT / 2;
+    this.splashContainer = this.add.container(0, 0).setDepth(100);
+
+    // Background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0a0a0f, 1);
+    bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    this.splashContainer.add(bg);
+
+    // Title
+    const title = this.add.text(cx, cy - 120, "POKÉ SURVIVOR", {
+      fontFamily: "monospace",
+      fontSize: "24px",
+      color: "#fbbf24",
+      stroke: "#000",
+      strokeThickness: 3,
+    }).setOrigin(0.5);
+    this.splashContainer.add(title);
+
+    // Subtitle
+    const sub = this.add.text(cx, cy - 90, "PMD × Vampire Survivors", {
+      fontFamily: "monospace",
+      fontSize: "10px",
+      color: "#667eea",
+    }).setOrigin(0.5);
+    this.splashContainer.add(sub);
+
+    // Data usage info
+    const spriteCount = ESSENTIAL_KEYS.size;
+    const infoLines = [
+      `${spriteCount} sprites to download (~8MB)`,
+      "Cached for 7 days after first load",
+      "",
+      "Uses mobile data / Wi-Fi",
+    ];
+    const info = this.add.text(cx, cy - 20, infoLines.join("\n"), {
+      fontFamily: "monospace",
+      fontSize: "10px",
+      color: "#888",
+      align: "center",
+      lineSpacing: 4,
+    }).setOrigin(0.5);
+    this.splashContainer.add(info);
+
+    // Start button
+    const btnW = 200;
+    const btnH = 48;
+    const btnY = cy + 60;
+    const btnGfx = this.add.graphics();
+    btnGfx.fillStyle(0x667eea, 1);
+    btnGfx.fillRoundedRect(cx - btnW / 2, btnY - btnH / 2, btnW, btnH, 10);
+    btnGfx.lineStyle(2, 0xa78bfa, 0.6);
+    btnGfx.strokeRoundedRect(cx - btnW / 2, btnY - btnH / 2, btnW, btnH, 10);
+    this.splashContainer.add(btnGfx);
+
+    const btnText = this.add.text(cx, btnY, "START LOADING", {
+      fontFamily: "monospace",
+      fontSize: "16px",
+      color: "#fff",
+      stroke: "#000",
+      strokeThickness: 1,
+    }).setOrigin(0.5);
+    this.splashContainer.add(btnText);
+
+    // Pulse animation on button
+    this.tweens.add({
+      targets: [btnGfx, btnText],
+      alpha: 0.7,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // Footer
+    const footer = this.add.text(cx, GAME_HEIGHT - 40, "Sprites: pokemonAutoChess (GPL-3.0)\nCDN: jsDelivr (7-day cache)", {
+      fontFamily: "monospace",
+      fontSize: "7px",
+      color: "#444",
+      align: "center",
+    }).setOrigin(0.5);
+    this.splashContainer.add(footer);
+
+    // Click anywhere to start (Phaser 3.90 scrollFactor workaround)
+    this.input.once("pointerdown", () => {
+      this.startRemoteLoading();
+    });
+  }
+
+  // ────────────────────────────────────────────
+  // Remote loading phase
+  // ────────────────────────────────────────────
+
+  private startRemoteLoading(): void {
+    // Remove splash
+    this.splashContainer.destroy();
+
+    // Show loading UI
+    this.createLoadingUI();
+
+    // Configure loader
+    this.load.maxParallelDownloads = 12;
+    this.load.on("loaderror", (file: Phaser.Loader.File) => {
+      console.warn(`[BootScene] Failed to load: ${file.key} — using placeholder`);
+    });
+
+    // Queue remote sprite assets
     loadPmdSprites(this);
     loadPmdPortraits(this);
     loadPmdAttackSprites(this);
-
-    // Load attack effect spritesheets
-    loadAttackEffects(this);
 
     // Progress events
     this.load.on("progress", (value: number) => {
@@ -76,21 +194,22 @@ export class BootScene extends Phaser.Scene {
     });
 
     this.load.on("fileprogress", (file: Phaser.Loader.File) => {
-      // Show which asset is loading
       const name = file.key.replace("pac-", "").replace("portrait-", "").replace("atk-", "");
       this.statusText.setText(name);
     });
 
-    this.load.on("complete", () => {
+    this.load.once("complete", () => {
       this.statusText.setText("Creating animations...");
+      // Use setTimeout to let the status text render before blocking on anim creation
+      setTimeout(() => {
+        createPmdAnimations(this);
+        createPmdAttackAnimations(this);
+        this.scene.start("TitleScene");
+      }, 50);
     });
-  }
 
-  create(): void {
-    createPmdAnimations(this);
-    createPmdAttackAnimations(this);
-    createAttackAnimations(this);
-    this.scene.start("TitleScene");
+    // Start the manual load
+    this.load.start();
   }
 
   private createLoadingUI(): void {
@@ -105,7 +224,7 @@ export class BootScene extends Phaser.Scene {
       strokeThickness: 3,
     }).setOrigin(0.5);
 
-    this.add.text(centerX, GAME_HEIGHT / 2 - 75, "Loading...", {
+    this.add.text(centerX, GAME_HEIGHT / 2 - 75, "Downloading sprites...", {
       fontFamily: "monospace",
       fontSize: "12px",
       color: "#667eea",
@@ -172,7 +291,7 @@ export class BootScene extends Phaser.Scene {
     });
 
     // Footer
-    this.add.text(centerX, GAME_HEIGHT - 50, "Loading essential sprites...", {
+    this.add.text(centerX, GAME_HEIGHT - 50, "Cached via jsDelivr CDN (7 days)", {
       fontFamily: "monospace",
       fontSize: "8px",
       color: "#444",
