@@ -343,7 +343,7 @@ export function spawnXpGem(ctx: GameContext, x: number, y: number, value: number
 }
 
 export function updateXpGemMagnet(ctx: GameContext): void {
-  const magnetRange = ctx.xpMagnetRange + ctx.level * 5;
+  const magnetRange = ctx.xpMagnetRange + ctx.level * 2;
   const magnetSpeed = 200 + ctx.level * 10;
   const ax = ctx.ace.sprite.x;
   const ay = ctx.ace.sprite.y;

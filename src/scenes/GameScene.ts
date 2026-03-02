@@ -134,7 +134,7 @@ export class GameScene extends Phaser.Scene {
   // -- Combat perks --
   private critChance = 0;
   private lifestealRate = 0;
-  private xpMagnetRange = 60;
+  private xpMagnetRange = 40;
 
   // -- Skill state --
   private skillId = "";
@@ -458,7 +458,7 @@ export class GameScene extends Phaser.Scene {
     this.dodgeCooldown = 0;
     this.critChance = 0;
     this.lifestealRate = 0;
-    this.xpMagnetRange = 60;
+    this.xpMagnetRange = 40;
     this.legionEntities = [];
     // Clear stale object pools — scene.stop() destroys all game objects,
     // but the array still holds references to destroyed Text objects.

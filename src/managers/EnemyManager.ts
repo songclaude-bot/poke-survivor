@@ -376,7 +376,7 @@ export function spawnBoss(ctx: GameContext): void {
   const bx = ctx.ace.sprite.x + Math.cos(angle) * dist;
   const by = ctx.ace.sprite.y + Math.sin(angle) * dist;
 
-  const bossHp = 200 + ctx.cycleNumber * 80;
+  const bossHp = 500 + ctx.cycleNumber * 200;
   const bossKey = BOSS_POOL[(ctx.cycleNumber - 1 + ctx.waveNumber) % BOSS_POOL.length];
   const pmdTexKey = pacTexKey(bossKey);
   const usePmd = ctx.scene.textures.exists(pmdTexKey);

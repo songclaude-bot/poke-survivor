@@ -104,6 +104,12 @@ export function updateCompanions(ctx: GameContext, dt: number): void {
         if (d < c.attackRange) {
           e.hp -= c.atk;
           ctx.showDamagePopup(e.sprite.x, e.sprite.y, c.atk, "#c084fc");
+          // Visual hit flash
+          const flash = ctx.scene.add.circle(e.sprite.x, e.sprite.y, 6, 0xc084fc, 0.7).setDepth(10);
+          ctx.scene.tweens.add({
+            targets: flash, radius: 14, alpha: 0, duration: 200,
+            onComplete: () => flash.destroy(),
+          });
           e.sprite.setTint(0xff88ff);
           ctx.scene.time.delayedCall(60, () => {
             if (e.sprite.active) e.sprite.setTint(0xff8888);
@@ -215,6 +221,15 @@ export function updateLegions(ctx: GameContext, dt: number): void {
         if (d < legion.attackRange) {
           e.hp -= dmg;
           ctx.showDamagePopup(e.sprite.x, e.sprite.y, dmg, "#67e8f9");
+          // Visual hit: line from legion to target + impact flash
+          const line = ctx.scene.add.graphics().setDepth(10);
+          line.lineStyle(1.5, color, 0.6);
+          line.lineBetween(clampX, clampY, e.sprite.x, e.sprite.y);
+          const flash = ctx.scene.add.circle(e.sprite.x, e.sprite.y, 5, color, 0.6).setDepth(10);
+          ctx.scene.tweens.add({
+            targets: flash, radius: 12, alpha: 0, duration: 180,
+            onComplete: () => { flash.destroy(); line.destroy(); },
+          });
           e.sprite.setTint(color);
           ctx.scene.time.delayedCall(60, () => {
             if (e.sprite.active) e.sprite.setTint(0xff8888);
