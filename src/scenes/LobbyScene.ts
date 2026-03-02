@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { GAME_WIDTH, GAME_HEIGHT } from "../config";
-import { POKEMON_SPRITES, pacTexKey } from "../sprites/PmdSpriteLoader";
+import { POKEMON_SPRITES, pacTexKey, startDeferredLoading } from "../sprites/PmdSpriteLoader";
 import { sfx, BGM_TRACKS } from "../audio/SfxManager";
 import {
   ALL_STARTERS,
@@ -73,6 +73,9 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Start loading deferred (non-essential) sprites in background
+    startDeferredLoading(this);
+
     // Background
     this.drawBackground();
 

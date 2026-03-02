@@ -510,12 +510,55 @@ export function pacTexKey(key: string): string {
   return `pac-${key}`;
 }
 
+// ================================================================
+// ESSENTIAL vs DEFERRED — two-phase loading for fast boot
+// ================================================================
+
 /**
- * Load Pokemon sprites as multiatlas from PAC repository.
- * Call this in preload() of BootScene.
+ * Essential pokemon loaded at boot: starters + their evolutions + Tier 0 enemies.
+ * Everything else is loaded in the background after the lobby opens.
+ */
+export const ESSENTIAL_KEYS = new Set([
+  // Starters + evolution chains (43)
+  "pikachu", "raichu",
+  "charmander", "charmeleon", "charizard",
+  "squirtle", "wartortle", "blastoise",
+  "bulbasaur", "ivysaur", "venusaur",
+  "gastly", "haunter", "gengar",
+  "geodude", "graveler", "golem",
+  "eevee", "jolteon", "flareon",
+  "chikorita", "bayleef", "meganium",
+  "cyndaquil", "quilava", "typhlosion",
+  "totodile", "croconaw", "feraligatr",
+  "treecko", "grovyle", "sceptile",
+  "torchic", "combusken", "blaziken",
+  "mudkip", "marshtomp", "swampert",
+  "riolu", "lucario",
+  "machop", "machoke", "machamp",
+  // Tier 0 enemies (21) — spawns in first 45 seconds
+  "rattata", "caterpie", "weedle", "pidgey", "paras", "oddish", "meowth",
+  "sentret", "hoothoot", "ledyba", "spinarak", "wurmple", "zigzagoon",
+  "poochyena", "starly", "bidoof", "lillipup", "pidove", "sewaddle",
+  "venipede", "cottonee",
+]);
+
+/** Starter keys that need portraits in the lobby */
+const STARTER_PORTRAIT_KEYS = [
+  "pikachu", "charmander", "squirtle", "bulbasaur", "gastly", "geodude",
+  "eevee", "chikorita", "cyndaquil", "totodile", "treecko", "torchic",
+  "mudkip", "riolu", "machop",
+];
+
+/** Track deferred loading state */
+let _deferredLoaded = false;
+
+/**
+ * Load ONLY essential Pokemon sprites (starters + Tier 0 enemies).
+ * Call this in preload() of BootScene for fast initial boot.
  */
 export function loadPmdSprites(scene: Phaser.Scene): void {
   for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
+    if (!ESSENTIAL_KEYS.has(key)) continue;
     const atlasKey = pacTexKey(key);
     const jsonUrl = `${PAC_SPRITE_BASE}/${config.id}.json`;
     scene.load.multiatlas(atlasKey, jsonUrl, `${PAC_SPRITE_BASE}/`);
@@ -523,12 +566,14 @@ export function loadPmdSprites(scene: Phaser.Scene): void {
 }
 
 /**
- * Load PMD portraits for UI use.
+ * Load ONLY starter portraits for lobby display.
  */
 export function loadPmdPortraits(scene: Phaser.Scene): void {
-  for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
+  for (const pk of STARTER_PORTRAIT_KEYS) {
+    const config = POKEMON_SPRITES[pk];
+    if (!config) continue;
     const url = `${PAC_PORTRAIT_BASE}/${config.id}/Normal.png`;
-    scene.load.image(`portrait-${key}`, url);
+    scene.load.image(`portrait-${pk}`, url);
   }
 }
 
@@ -540,112 +585,150 @@ export function loadPmdAttackSprites(_scene: Phaser.Scene): void {
 }
 
 /**
- * Create walk + idle + attack animations from loaded PAC atlases.
- * Scans atlas frame names to auto-discover animations and frame counts.
- * Call this in create() after sprites are loaded.
+ * Start background loading of ALL deferred (non-essential) sprites + portraits.
+ * Call once from LobbyScene.create() — safe to call multiple times (no-op after first).
+ * Uses Phaser's manual loader: queue assets then scene.load.start().
  */
-export function createPmdAnimations(scene: Phaser.Scene): void {
-  for (const [key] of Object.entries(POKEMON_SPRITES)) {
+export function startDeferredLoading(scene: Phaser.Scene): void {
+  if (_deferredLoaded) return;
+  _deferredLoaded = true;
+
+  let queued = 0;
+  for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
+    // Skip already-loaded essential sprites
+    if (ESSENTIAL_KEYS.has(key) && scene.textures.exists(pacTexKey(key))) continue;
+    // Skip if already loaded for any reason
+    if (scene.textures.exists(pacTexKey(key))) continue;
+
     const atlasKey = pacTexKey(key);
-    if (!scene.textures.exists(atlasKey)) continue;
+    const jsonUrl = `${PAC_SPRITE_BASE}/${config.id}.json`;
+    scene.load.multiatlas(atlasKey, jsonUrl, `${PAC_SPRITE_BASE}/`);
 
-    const frameNames = scene.textures.get(atlasKey).getFrameNames();
-
-    // Discover available animations by scanning frame names
-    // Format: "Normal/{Action}/Anim/{Dir}/{FrameIdx}"
-    const animFrameCounts = new Map<string, number>(); // "Walk/0" -> max frame index + 1
-
-    for (const name of frameNames) {
-      const match = name.match(/^Normal\/(\w+)\/Anim\/(\d)\/(\d{4})$/);
-      if (match) {
-        const [, action, dir, frameIdxStr] = match;
-        const mapKey = `${action}/${dir}`;
-        const idx = parseInt(frameIdxStr, 10);
-        const cur = animFrameCounts.get(mapKey) ?? 0;
-        if (idx + 1 > cur) animFrameCounts.set(mapKey, idx + 1);
-      }
+    // Also load portrait if not yet loaded
+    if (!scene.textures.exists(`portrait-${key}`)) {
+      scene.load.image(`portrait-${key}`, `${PAC_PORTRAIT_BASE}/${config.id}/Normal.png`);
     }
+    queued++;
+  }
 
-    // Create walk animations for each direction
-    for (let dir = 0; dir < 8; dir++) {
-      const walkKey = `Walk/${dir}`;
-      const frameCount = animFrameCounts.get(walkKey);
-      if (!frameCount) continue;
+  if (queued === 0) return;
 
-      scene.anims.create({
-        key: `${key}-walk-${PMD_DIRECTIONS[dir]}`,
-        frames: scene.anims.generateFrameNames(atlasKey, {
-          start: 0,
-          end: frameCount - 1,
-          zeroPad: 4,
-          prefix: `Normal/Walk/Anim/${dir}/`,
-        }),
-        frameRate: 8,
-        repeat: -1,
-      });
+  scene.load.once("complete", () => {
+    // Create animations for newly loaded sprites
+    createAnimationsForLoadedKeys(scene);
+  });
+  scene.load.start();
+}
+
+// ================================================================
+// ANIMATION CREATION
+// ================================================================
+
+/**
+ * Create animations for a single pokemon key.
+ * Reusable for both initial and deferred loading.
+ */
+function createAnimationsForKey(scene: Phaser.Scene, key: string): void {
+  const atlasKey = pacTexKey(key);
+  if (!scene.textures.exists(atlasKey)) return;
+
+  const frameNames = scene.textures.get(atlasKey).getFrameNames();
+  const animFrameCounts = new Map<string, number>();
+
+  for (const name of frameNames) {
+    const match = name.match(/^Normal\/(\w+)\/Anim\/(\d)\/(\d{4})$/);
+    if (match) {
+      const [, action, dir, frameIdxStr] = match;
+      const mapKey = `${action}/${dir}`;
+      const idx = parseInt(frameIdxStr, 10);
+      const cur = animFrameCounts.get(mapKey) ?? 0;
+      if (idx + 1 > cur) animFrameCounts.set(mapKey, idx + 1);
     }
+  }
 
-    // Create idle animation (direction 0 = down)
+  // Walk animations (8 directions)
+  for (let dir = 0; dir < 8; dir++) {
+    const fc = animFrameCounts.get(`Walk/${dir}`);
+    if (!fc) continue;
+    const animKey = `${key}-walk-${PMD_DIRECTIONS[dir]}`;
+    if (scene.anims.exists(animKey)) continue;
+    scene.anims.create({
+      key: animKey,
+      frames: scene.anims.generateFrameNames(atlasKey, {
+        start: 0, end: fc - 1, zeroPad: 4, prefix: `Normal/Walk/Anim/${dir}/`,
+      }),
+      frameRate: 8, repeat: -1,
+    });
+  }
+
+  // Idle animation (direction 0)
+  const idleAnimKey = `${key}-idle`;
+  if (!scene.anims.exists(idleAnimKey)) {
     const idleCount = animFrameCounts.get("Idle/0");
     if (idleCount) {
       scene.anims.create({
-        key: `${key}-idle`,
+        key: idleAnimKey,
         frames: scene.anims.generateFrameNames(atlasKey, {
-          start: 0,
-          end: idleCount - 1,
-          zeroPad: 4,
-          prefix: `Normal/Idle/Anim/0/`,
+          start: 0, end: idleCount - 1, zeroPad: 4, prefix: `Normal/Idle/Anim/0/`,
         }),
-        frameRate: 4,
-        repeat: -1,
+        frameRate: 4, repeat: -1,
       });
     } else {
-      // Fallback: use first walk frame as idle
       const walkDown = animFrameCounts.get("Walk/0");
       if (walkDown) {
         scene.anims.create({
-          key: `${key}-idle`,
+          key: idleAnimKey,
           frames: [{ key: atlasKey, frame: "Normal/Walk/Anim/0/0000" }],
           frameRate: 1,
         });
       }
     }
+  }
 
-    // Create attack animations for each direction
-    for (let dir = 0; dir < 8; dir++) {
-      const attackKey = `Attack/${dir}`;
-      const frameCount = animFrameCounts.get(attackKey);
-      if (!frameCount) continue;
+  // Attack animations (8 directions)
+  for (let dir = 0; dir < 8; dir++) {
+    const fc = animFrameCounts.get(`Attack/${dir}`);
+    if (!fc) continue;
+    const animKey = `${key}-attack-${PMD_DIRECTIONS[dir]}`;
+    if (scene.anims.exists(animKey)) continue;
+    scene.anims.create({
+      key: animKey,
+      frames: scene.anims.generateFrameNames(atlasKey, {
+        start: 0, end: fc - 1, zeroPad: 4, prefix: `Normal/Attack/Anim/${dir}/`,
+      }),
+      frameRate: 14, repeat: 0,
+    });
+  }
 
-      scene.anims.create({
-        key: `${key}-attack-${PMD_DIRECTIONS[dir]}`,
-        frames: scene.anims.generateFrameNames(atlasKey, {
-          start: 0,
-          end: frameCount - 1,
-          zeroPad: 4,
-          prefix: `Normal/Attack/Anim/${dir}/`,
-        }),
-        frameRate: 14,
-        repeat: 0,
-      });
-    }
-
-    // Create hurt animation (direction 0 only, play once)
+  // Hurt animation (direction 0)
+  const hurtAnimKey = `${key}-hurt`;
+  if (!scene.anims.exists(hurtAnimKey)) {
     const hurtCount = animFrameCounts.get("Hurt/0");
     if (hurtCount) {
       scene.anims.create({
-        key: `${key}-hurt`,
+        key: hurtAnimKey,
         frames: scene.anims.generateFrameNames(atlasKey, {
-          start: 0,
-          end: hurtCount - 1,
-          zeroPad: 4,
-          prefix: `Normal/Hurt/Anim/0/`,
+          start: 0, end: hurtCount - 1, zeroPad: 4, prefix: `Normal/Hurt/Anim/0/`,
         }),
-        frameRate: 10,
-        repeat: 0,
+        frameRate: 10, repeat: 0,
       });
     }
   }
+}
+
+/** Create animations for all loaded atlases (used by both boot and deferred). */
+function createAnimationsForLoadedKeys(scene: Phaser.Scene): void {
+  for (const [key] of Object.entries(POKEMON_SPRITES)) {
+    createAnimationsForKey(scene, key);
+  }
+}
+
+/**
+ * Create animations for essential sprites loaded at boot.
+ * Call in BootScene.create().
+ */
+export function createPmdAnimations(scene: Phaser.Scene): void {
+  createAnimationsForLoadedKeys(scene);
 }
 
 /**

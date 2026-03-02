@@ -48,8 +48,8 @@ export class BootScene extends Phaser.Scene {
     this.createPlaceholderSprites();
     this.createLoadingUI();
 
-    // Configure loader
-    this.load.maxParallelDownloads = 6;
+    // Configure loader — higher parallelism for faster boot
+    this.load.maxParallelDownloads = 12;
     this.load.on("loaderror", (file: Phaser.Loader.File) => {
       console.warn(`[BootScene] Failed to load: ${file.key} — using placeholder`);
     });
@@ -172,7 +172,7 @@ export class BootScene extends Phaser.Scene {
     });
 
     // Footer
-    this.add.text(centerX, GAME_HEIGHT - 50, "Loading 400+ Pokémon sprites...", {
+    this.add.text(centerX, GAME_HEIGHT - 50, "Loading essential sprites...", {
       fontFamily: "monospace",
       fontSize: "8px",
       color: "#444",
