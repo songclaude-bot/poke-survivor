@@ -4,7 +4,6 @@ import {
   loadPmdSprites,
   loadPmdPortraits,
   loadPmdAttackSprites,
-  ESSENTIAL_KEYS,
   createPmdAnimations,
   createPmdAttackAnimations,
 } from "../sprites/PmdSpriteLoader";
@@ -105,9 +104,8 @@ export class BootScene extends Phaser.Scene {
     this.splashContainer.add(sub);
 
     // Data usage info
-    const spriteCount = ESSENTIAL_KEYS.size;
     const infoLines = [
-      `${spriteCount} sprites to download (~8MB)`,
+      "200+ sprites to download (~20MB)",
       "Cached for 7 days after first load",
       "",
       "Uses mobile data / Wi-Fi",
@@ -121,7 +119,7 @@ export class BootScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.splashContainer.add(info);
 
-    // Start button
+    // Start button — interactive zone for button area only
     const btnW = 200;
     const btnH = 48;
     const btnY = cy + 60;
@@ -141,6 +139,13 @@ export class BootScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.splashContainer.add(btnText);
 
+    // Interactive hit zone exactly over button
+    const hitZone = this.add.zone(cx, btnY, btnW, btnH).setInteractive({ useHandCursor: true });
+    hitZone.once("pointerdown", () => {
+      this.startRemoteLoading();
+    });
+    this.splashContainer.add(hitZone);
+
     // Pulse animation on button
     this.tweens.add({
       targets: [btnGfx, btnText],
@@ -159,11 +164,6 @@ export class BootScene extends Phaser.Scene {
       align: "center",
     }).setOrigin(0.5);
     this.splashContainer.add(footer);
-
-    // Click anywhere to start (Phaser 3.90 scrollFactor workaround)
-    this.input.once("pointerdown", () => {
-      this.startRemoteLoading();
-    });
   }
 
   // ────────────────────────────────────────────

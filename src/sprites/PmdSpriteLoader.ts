@@ -554,12 +554,11 @@ const STARTER_PORTRAIT_KEYS = [
 let _deferredLoaded = false;
 
 /**
- * Load ONLY essential Pokemon sprites (starters + Tier 0 enemies).
- * Call this in preload() of BootScene for fast initial boot.
+ * Load ALL Pokemon sprites as multiatlas from PAC repository.
+ * Call after user confirms download on the splash screen.
  */
 export function loadPmdSprites(scene: Phaser.Scene): void {
   for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
-    if (!ESSENTIAL_KEYS.has(key)) continue;
     const atlasKey = pacTexKey(key);
     const jsonUrl = `${PAC_SPRITE_BASE}/${config.id}.json`;
     scene.load.multiatlas(atlasKey, jsonUrl, `${PAC_SPRITE_BASE}/`);
@@ -567,14 +566,12 @@ export function loadPmdSprites(scene: Phaser.Scene): void {
 }
 
 /**
- * Load ONLY starter portraits for lobby display.
+ * Load ALL PMD portraits for UI use.
  */
 export function loadPmdPortraits(scene: Phaser.Scene): void {
-  for (const pk of STARTER_PORTRAIT_KEYS) {
-    const config = POKEMON_SPRITES[pk];
-    if (!config) continue;
+  for (const [key, config] of Object.entries(POKEMON_SPRITES)) {
     const url = `${PAC_PORTRAIT_BASE}/${config.id}/Normal.png`;
-    scene.load.image(`portrait-${pk}`, url);
+    scene.load.image(`portrait-${key}`, url);
   }
 }
 
