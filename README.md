@@ -2,7 +2,7 @@
 
 > 포켓몬 불가사의 던전 × 뱀파이어 서바이버즈 — 모바일 웹 팬게임
 
-**[Play Now](https://songclaude-bot.github.io/poke-survivor/)**
+**[Play Now](https://songclaude-bot.github.io/poke-survivor/)** · **[Intro Page](https://songclaude-bot.github.io/poke-survivor-page/)**
 
 ---
 
