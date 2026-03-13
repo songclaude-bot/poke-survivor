@@ -37,6 +37,7 @@ export class SfxManager {
   private bgmElement: HTMLAudioElement | null = null;
   private bgmPlaying = false;
   private currentBgmTrack = "";
+  private fadeInterval: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
 
   /** Must be called from a user gesture (tap/click) */
@@ -133,12 +134,13 @@ export class SfxManager {
   switchBgm(track: string): void {
     if (this.currentBgmTrack === track) return;
     if (this.bgmElement) {
+      if (this.fadeInterval) clearInterval(this.fadeInterval);
       const old = this.bgmElement;
-      const fade = setInterval(() => {
+      this.fadeInterval = setInterval(() => {
         if (old.volume > 0.05) {
           old.volume = Math.max(0, old.volume - 0.05);
         } else {
-          clearInterval(fade);
+          if (this.fadeInterval) { clearInterval(this.fadeInterval); this.fadeInterval = null; }
           old.pause();
           old.src = "";
           this.startBgm(track);
@@ -150,6 +152,7 @@ export class SfxManager {
   }
 
   stopBgm(): void {
+    if (this.fadeInterval) { clearInterval(this.fadeInterval); this.fadeInterval = null; }
     if (this.bgmElement) {
       this.bgmElement.pause();
       this.bgmElement.src = "";

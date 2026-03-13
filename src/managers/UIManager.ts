@@ -173,6 +173,14 @@ export function updateDangerVignette(ctx: GameContext): void {
 let _activeWarning: Phaser.GameObjects.Text | null = null;
 let _activeFlash: Phaser.GameObjects.Rectangle | null = null;
 
+/** Call on scene restart to clear stale references */
+export function resetUIState(): void {
+  if (_activeWarning?.scene) _activeWarning.destroy();
+  if (_activeFlash?.scene) _activeFlash.destroy();
+  _activeWarning = null;
+  _activeFlash = null;
+}
+
 export function showWarning(ctx: GameContext, text: string): void {
   const scene = ctx.scene;
 

@@ -51,14 +51,12 @@ export function addCompanion(ctx: GameContext): void {
   ctx.companions.push(companion);
 
   // Announce
-  const names = POKEMON_SPRITES[pokemonKey]?.name
-    ? [POKEMON_SPRITES.squirtle.name, POKEMON_SPRITES.gastly.name, POKEMON_SPRITES.geodude.name]
-    : ["Squirtle", "Gastly", "Geodude"];
+  const displayName = POKEMON_SPRITES[pokemonKey]?.name ?? pokemonKey;
   const txt = ctx.scene.add
     .text(
       GAME_WIDTH / 2,
       GAME_HEIGHT / 2 + 20,
-      `+ ${names[ctx.companions.length - 1] ?? "Companion"} joined!`,
+      `+ ${displayName} joined!`,
       {
         fontFamily: "monospace",
         fontSize: "16px",
@@ -157,11 +155,12 @@ export function updateCompanions(ctx: GameContext, dt: number): void {
 
 export function evolveCompanion(ctx: GameContext, companion: CompanionData): void {
   const chain = EVOLUTION_CHAINS[companion.sprite.texture.key.replace("pac-", "")];
-  const currentStage = ctx.companionEvoStages.get(companion.sprite.texture.key) ?? 0;
+  const evoKey = `${companion.sprite.texture.key}_${companion.orbitAngle.toFixed(2)}`;
+  const currentStage = ctx.companionEvoStages.get(evoKey) ?? 0;
   if (!chain || currentStage >= chain.length - 1) return;
 
   const nextStage = currentStage + 1;
-  ctx.companionEvoStages.set(companion.sprite.texture.key, nextStage);
+  ctx.companionEvoStages.set(evoKey, nextStage);
 
   const stage = chain[nextStage];
   const prevStage = chain[currentStage];

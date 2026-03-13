@@ -45,9 +45,9 @@ export function updateEnemies(ctx: GameContext, dt: number): void {
       ctx.damageAce(e.atk * 0.016);
     }
 
-    // Draw HP bar above enemy
-    e.hpBar.clear();
+    // Draw HP bar above enemy (only when damaged)
     if (e.hp < e.maxHp) {
+      e.hpBar.clear();
       const bw = e.isElite ? 26 : 20;
       const bx = e.sprite.x - bw / 2;
       const by = e.sprite.y - (e.isElite ? 20 : 16);
@@ -55,6 +55,9 @@ export function updateEnemies(ctx: GameContext, dt: number): void {
       e.hpBar.fillRect(bx, by, bw, e.isElite ? 4 : 3);
       e.hpBar.fillStyle(e.isElite ? 0xffaa00 : COLORS.hpRed, 1);
       e.hpBar.fillRect(bx, by, bw * (e.hp / e.maxHp), e.isElite ? 4 : 3);
+      e.hpBar.setVisible(true);
+    } else {
+      e.hpBar.setVisible(false);
     }
 
     // Remove if too far from player

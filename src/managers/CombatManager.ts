@@ -21,6 +21,7 @@ import {
 import { getDirectionFromVelocity, pacTexKey, POKEMON_SPRITES } from "../sprites/PmdSpriteLoader";
 import { sfx } from "../audio/SfxManager";
 import { EVOLUTION_CHAINS } from "../data/GameData";
+import { getUpgradeBonus } from "../data/SaveData";
 import type { ProjectileData, EnemyData, ItemType, XpGem } from "../data/GameTypes";
 import type { GameContext } from "./GameContext";
 import { showDamagePopup, spawnDeathParticles, showStreakText } from "./UIManager";
@@ -358,17 +359,20 @@ export function updateXpGemMagnet(ctx: GameContext): void {
 
     const dist = Phaser.Math.Distance.Between(ax, ay, gem.sprite.x, gem.sprite.y);
 
-    if (dist < magnetRange || gem.magnetized) {
+    if (dist < magnetRange || (gem.magnetized && dist < 500)) {
       gem.magnetized = true;
       const angle = Math.atan2(ay - gem.sprite.y, ax - gem.sprite.x);
       gem.sprite.setVelocity(Math.cos(angle) * magnetSpeed, Math.sin(angle) * magnetSpeed);
+    } else {
+      gem.magnetized = false;
     }
   }
 }
 
 export function collectXpGem(ctx: GameContext, gem: XpGem): void {
   sfx.playPickup();
-  ctx.xp += gem.value;
+  const xpMult = 1 + getUpgradeBonus("xpGain", ctx.saveData?.upgradeLevels ?? {});
+  ctx.xp += Math.floor(gem.value * xpMult);
   gem.sprite.destroy();
   const idx = ctx.xpGems.indexOf(gem);
   if (idx >= 0) ctx.xpGems.splice(idx, 1);
@@ -477,6 +481,7 @@ function collectItem(ctx: GameContext, item: { sprite: Phaser.Physics.Arcade.Spr
       // Bomb: subtle flash + minimal shake (photosensitivity safe)
       ctx.scene.cameras.main.flash(100, 80, 50, 0);
       ctx.scene.cameras.main.shake(80, 0.003);
+      const toKill: EnemyData[] = [];
       for (const e of ctx.enemies) {
         if (!e.sprite.active) continue;
         const dist = Phaser.Math.Distance.Between(
@@ -489,11 +494,10 @@ function collectItem(ctx: GameContext, item: { sprite: Phaser.Physics.Arcade.Spr
           ctx.scene.time.delayedCall(100, () => {
             if (e.sprite.active) e.sprite.setTint(0xff8888);
           });
-          if (e.hp <= 0) {
-            ctx.onEnemyDeath(e);
-          }
+          if (e.hp <= 0) toKill.push(e);
         }
       }
+      for (const e of toKill) ctx.onEnemyDeath(e);
       showDamagePopup(ctx, ctx.ace.sprite.x, ctx.ace.sprite.y - 30, "BOOM!", "#ff6600");
       break;
     }
@@ -537,6 +541,7 @@ export function updateSkillEffects(ctx: GameContext, dt: number): void {
       if (ctx.skillTimer >= 30) {
         ctx.skillTimer -= 30;
         ctx.speedBoostStacks++;
+        ctx.ace.speed = Math.floor(ctx.ace.speed * 1.05);
         ctx.ace.attackCooldown = Math.max(200, Math.floor(ctx.ace.attackCooldown * 0.95));
         showDamagePopup(ctx, ctx.ace.sprite.x, ctx.ace.sprite.y - 30, "SPD BOOST!", "#fbbf24");
       }
@@ -579,6 +584,21 @@ export function updateSkillEffects(ctx: GameContext, dt: number): void {
         }
       }
       break;
+  }
+}
+
+/** Apply regen from shop upgrade (independent of starter skill). Ticks every 5s. */
+let _regenAccum = 0;
+export function updatePassiveRegen(ctx: GameContext, dt: number): void {
+  const regenRate = getUpgradeBonus("regen", ctx.saveData?.upgradeLevels ?? {});
+  if (regenRate <= 0) { _regenAccum = 0; return; }
+  _regenAccum += dt;
+  if (_regenAccum >= 5) {
+    _regenAccum -= 5;
+    if (ctx.ace.hp < ctx.ace.maxHp) {
+      const heal = Math.max(1, Math.floor(ctx.ace.maxHp * regenRate));
+      ctx.ace.hp = Math.min(ctx.ace.maxHp, ctx.ace.hp + heal);
+    }
   }
 }
 

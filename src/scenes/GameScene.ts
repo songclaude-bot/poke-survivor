@@ -47,7 +47,7 @@ import { createButton, createPanel } from "../ui/UIComponents";
 import type { GameContext } from "../managers/GameContext";
 import {
   drawHUD, updateDangerVignette, showWarning,
-  showDamagePopup, spawnDeathParticles,
+  showDamagePopup, spawnDeathParticles, resetUIState,
 } from "../managers/UIManager";
 import {
   updateEnemies, updateEnemyProjectiles, cleanupEnemy,
@@ -61,7 +61,7 @@ import {
   updateAceAutoAttack, fireProjectile, updateProjectiles,
   onProjectileHitEnemy, damageAce, onEnemyDeath,
   updateXpGemMagnet, collectXpGem, updateItems,
-  updateSkillEffects, findNearestEnemy, updateKillStreak,
+  updateSkillEffects, updatePassiveRegen, findNearestEnemy, updateKillStreak,
   evolveAce,
 } from "../managers/CombatManager";
 
@@ -146,6 +146,9 @@ export class GameScene extends Phaser.Scene {
   private phaseTimer = 0;
   private adaptabilityMult = 1;
   private companionEvoStages: Map<string, number> = new Map();
+
+  // -- Scene lifecycle --
+  private runId = 0;
 
   // -- Wave system --
   private waveNumber = 0;
@@ -356,6 +359,7 @@ export class GameScene extends Phaser.Scene {
 
     // Capture context AFTER scene methods so snapshot reflects current state
     const c = this.ctx;
+    this.rebuildLookupMaps();
 
     updateEnemies(c, dt);
     updateAceAutoAttack(c);
@@ -367,6 +371,7 @@ export class GameScene extends Phaser.Scene {
     updateItems(c, dt);
     updateKillStreak(c);
     updateSkillEffects(c, dt);
+    updatePassiveRegen(c, dt);
 
     this.syncBack(c);
 
@@ -427,6 +432,8 @@ export class GameScene extends Phaser.Scene {
   // ================================================================
 
   private resetState(): void {
+    this.runId++;
+    resetUIState();
     this.enemies = [];
     this.projectiles = [];
     this.enemyProjectiles = [];
@@ -442,6 +449,7 @@ export class GameScene extends Phaser.Scene {
     this.cycleTimer = CYCLE_DURATION_SEC;
     this.spawnTimer = 0;
     this.isPaused = false;
+    this.aceDead = false;
     this.pendingLevelUp = false;
     this.aceEvoStage = 0;
     this.companionEvoStages = new Map();
@@ -456,9 +464,10 @@ export class GameScene extends Phaser.Scene {
     this.isDodging = false;
     this.dodgeTimer = 0;
     this.dodgeCooldown = 0;
-    this.critChance = 0;
+    const upgLevels = this.saveData?.upgradeLevels ?? {};
+    this.critChance = getUpgradeBonus("critChance", upgLevels);
     this.lifestealRate = 0;
-    this.xpMagnetRange = 40;
+    this.xpMagnetRange = 40 * (1 + getUpgradeBonus("magnetRange", upgLevels));
     this.legionEntities = [];
     // Clear stale object pools — scene.stop() destroys all game objects,
     // but the array still holds references to destroyed Text objects.
@@ -683,14 +692,28 @@ export class GameScene extends Phaser.Scene {
     this.itemGroup = this.physics.add.group({ runChildUpdate: false });
   }
 
+  // Sprite→Data lookup maps for O(1) collision resolution
+  private projMap = new Map<Phaser.GameObjects.GameObject, ProjectileData>();
+  private enemyMap = new Map<Phaser.GameObjects.GameObject, EnemyData>();
+  private gemMap = new Map<Phaser.GameObjects.GameObject, XpGem>();
+
+  private rebuildLookupMaps(): void {
+    this.projMap.clear();
+    for (const p of this.projectiles) this.projMap.set(p.sprite, p);
+    this.enemyMap.clear();
+    for (const e of this.enemies) this.enemyMap.set(e.sprite, e);
+    this.gemMap.clear();
+    for (const g of this.xpGems) this.gemMap.set(g.sprite, g);
+  }
+
   private setupCollisions(): void {
     this.physics.add.overlap(this.projectileGroup, this.enemyGroup, (projObj, enemyObj) => {
-      const proj = this.projectiles.find((p) => p.sprite === projObj);
-      const enemy = this.enemies.find((e) => e.sprite === enemyObj);
+      const proj = this.projMap.get(projObj);
+      const enemy = this.enemyMap.get(enemyObj);
       if (proj && enemy) onProjectileHitEnemy(this.ctx, proj, enemy);
     });
     this.physics.add.overlap(this.ace.sprite, this.xpGemGroup, (_aceObj, gemObj) => {
-      const gem = this.xpGems.find((g) => g.sprite === gemObj);
+      const gem = this.gemMap.get(gemObj);
       if (gem) this.handleCollectXpGem(gem);
     });
   }
@@ -856,9 +879,10 @@ export class GameScene extends Phaser.Scene {
       // Delay formation warning so it appears AFTER the wave warning fades
       const formationType = Math.floor(Math.random() * 3);
       const currentCycle = this.cycleNumber;
+      const currentRun = this.runId;
       setTimeout(() => {
-        // Guard: skip if scene transitioned to a different cycle
-        if (this.cycleTransitioning || this.cycleNumber !== currentCycle) return;
+        // Guard: skip if scene restarted or transitioned to a different cycle
+        if (this.runId !== currentRun || this.cycleTransitioning || this.cycleNumber !== currentCycle) return;
         if (formationType === 0) spawnEncirclement(this.ctx, elapsed);
         else if (formationType === 1) spawnDiagonalMarch(this.ctx, elapsed);
         else spawnRushSwarm(this.ctx, elapsed);
@@ -978,7 +1002,10 @@ export class GameScene extends Phaser.Scene {
   // DEATH
   // ================================================================
 
+  private aceDead = false;
   private onAceDeath(): void {
+    if (this.aceDead) return;
+    this.aceDead = true;
     this.isPaused = true;
     sfx.stopBgm();
     sfx.playDeath();
