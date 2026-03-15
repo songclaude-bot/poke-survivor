@@ -708,12 +708,12 @@ export class GameScene extends Phaser.Scene {
 
   private setupCollisions(): void {
     this.physics.add.overlap(this.projectileGroup, this.enemyGroup, (projObj, enemyObj) => {
-      const proj = this.projMap.get(projObj);
-      const enemy = this.enemyMap.get(enemyObj);
+      const proj = this.projMap.get(projObj as Phaser.GameObjects.GameObject);
+      const enemy = this.enemyMap.get(enemyObj as Phaser.GameObjects.GameObject);
       if (proj && enemy) onProjectileHitEnemy(this.ctx, proj, enemy);
     });
     this.physics.add.overlap(this.ace.sprite, this.xpGemGroup, (_aceObj, gemObj) => {
-      const gem = this.gemMap.get(gemObj);
+      const gem = this.gemMap.get(gemObj as Phaser.GameObjects.GameObject);
       if (gem) this.handleCollectXpGem(gem);
     });
   }
